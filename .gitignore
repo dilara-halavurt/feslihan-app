@@ -1,0 +1,18 @@
+# Xcode user data
+xcuserdata/
+*.xcuserstate
+IDEWorkspaceChecks.plist
+
+# Build
+build/
+DerivedData/
+
+# Node
+node_modules/
+
+# Environment
+.env
+.env.*
+
+# macOS
+.DS_Store

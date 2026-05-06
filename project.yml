@@ -1,0 +1,39 @@
+name: Feslihan
+options:
+  bundleIdPrefix: com.feslihan
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  Clerk:
+    url: https://github.com/clerk/clerk-ios
+    from: 1.1.1
+  RevenueCat:
+    url: https://github.com/RevenueCat/purchases-ios-spm
+    from: 5.0.0
+targets:
+  Feslihan:
+    type: application
+    platform: iOS
+    sources:
+      - Feslihan
+    dependencies:
+      - package: Clerk
+        product: ClerkKit
+      - package: Clerk
+        product: ClerkKitUI
+      - package: RevenueCat
+        product: RevenueCat
+    info:
+      path: Feslihan/Info.plist
+      properties:
+        UILaunchScreen: {}
+        NSPhotoLibraryUsageDescription: "Yemek videolarını içe aktarmak için fotoğraf kitaplığı erişimi gereklidir"
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.feslihan.app
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
