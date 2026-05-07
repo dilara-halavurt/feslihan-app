@@ -23,9 +23,9 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>UILaunchScreen</key>
-	<dict/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Yemek videolarını içe aktarmak için fotoğraf kitaplığı erişimi gereklidir</string>
+	<key>UILaunchScreen</key>
+	<dict/>
 </dict>
 </plist>
