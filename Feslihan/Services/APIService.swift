@@ -161,12 +161,22 @@ struct IngredientDTO: Codable, Identifiable {
     var id: String { name }
     let name: String
     let price_tier: String?
+    let availability: String?
 
     var priceTierEmoji: String? {
         switch price_tier {
         case "cheap": return "₺"
         case "neutral": return "₺₺"
         case "expensive": return "₺₺₺"
+        default: return nil
+        }
+    }
+
+    var availabilityIcon: String? {
+        switch availability {
+        case "easy": return "checkmark.circle"
+        case "neutral": return "minus.circle"
+        case "rare": return "exclamationmark.circle"
         default: return nil
         }
     }

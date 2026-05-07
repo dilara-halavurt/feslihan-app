@@ -55,6 +55,12 @@ export const priceTierEnum = pgEnum("price_tier", [
   "expensive",
 ]);
 
+export const availabilityEnum = pgEnum("availability", [
+  "easy",
+  "neutral",
+  "rare",
+]);
+
 export const platformCreators = pgTable("platform_creators", {
   username: varchar("username", { length: 255 }).primaryKey(),
   platform: platformEnum("platform").notNull(),
@@ -123,6 +129,7 @@ export const ingredients = pgTable("ingredients", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name", { length: 255 }).notNull().unique(),
   priceTier: priceTierEnum("price_tier"),
+  availability: availabilityEnum("availability"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

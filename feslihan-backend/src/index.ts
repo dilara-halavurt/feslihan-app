@@ -555,7 +555,7 @@ app.get("/ingredients", async (_req, res) => {
     .select()
     .from(ingredients)
     .orderBy(ingredients.name);
-  res.json(result.map((r) => ({ name: r.name, price_tier: r.priceTier })));
+  res.json(result.map((r) => ({ name: r.name, price_tier: r.priceTier, availability: r.availability })));
 });
 
 // Update price tier for an ingredient
@@ -577,7 +577,29 @@ app.put("/ingredients/:name/price-tier", async (req, res) => {
     return;
   }
 
-  res.json({ name: result[0].name, price_tier: result[0].priceTier });
+  res.json({ name: result[0].name, price_tier: result[0].priceTier, availability: result[0].availability });
+});
+
+// Update availability for an ingredient
+app.put("/ingredients/:name/availability", async (req, res) => {
+  const { availability } = req.body;
+  if (!["easy", "neutral", "rare"].includes(availability)) {
+    res.status(400).json({ error: "availability must be easy, neutral, or rare" });
+    return;
+  }
+
+  const result = await db
+    .update(ingredients)
+    .set({ availability })
+    .where(eq(ingredients.name, req.params.name))
+    .returning();
+
+  if (result.length === 0) {
+    res.status(404).json({ error: "Ingredient not found" });
+    return;
+  }
+
+  res.json({ name: result[0].name, price_tier: result[0].priceTier, availability: result[0].availability });
 });
 
 // Proxy S3 images
