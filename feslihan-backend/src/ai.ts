@@ -154,6 +154,47 @@ Onemli kurallar:
   return JSON.parse(jsonString);
 }
 
+export async function classifyIngredients(names: string[]): Promise<{ name: string; price_tier: string; availability: string }[]> {
+  const prompt = `Sen bir Türk mutfağı ve market uzmanısın. Sana bir malzeme listesi vereceğim. Her malzeme için Türkiye marketlerindeki fiyat seviyesini ve bulunabilirliğini belirle.
+
+Malzeme listesi:
+${names.map((n, i) => `${i + 1}. ${n}`).join("\n")}
+
+Her malzeme için şunları belirle:
+- price_tier: "cheap" (ucuz, temel gıda), "neutral" (orta fiyatlı), "expensive" (pahalı, lüks)
+- availability: "easy" (her markette bulunur), "neutral" (çoğu markette bulunur), "rare" (özel marketlerde veya mevsimsel)
+
+SADECE aşağıdaki JSON formatında yanıt ver (başka hiçbir şey yazma):
+[
+  { "name": "malzeme adı", "price_tier": "cheap", "availability": "easy" }
+]
+
+Kurallar:
+- Türkiye market fiyatlarına göre değerlendir
+- Temel gıdalar (un, şeker, tuz, yağ, soğan, patates) = cheap + easy
+- Et, balık, deniz ürünleri = expensive
+- Egzotik baharatlar, ithal ürünler = rare
+- Her malzeme için mutlaka bir değer ver, boş bırakma`;
+
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 8192,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new Error("No text response from Claude");
+  }
+
+  const jsonString = textBlock.text
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
+
+  return JSON.parse(jsonString);
+}
+
 export async function generateMealPlan(input: MealPlanRequest) {
   const kidsInfo = input.has_kids
     ? `${input.kids_count} çocuk var, çocuk dostu yemekler de ekle.`

@@ -3,7 +3,7 @@ import express from "express";
 import { db } from "./db.js";
 import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans } from "./schema.js";
 import { uploadImage, s3KeyFromUrl, getImage } from "./s3.js";
-import { analyzeRecipe, generateMealPlan } from "./ai.js";
+import { analyzeRecipe, generateMealPlan, classifyIngredients } from "./ai.js";
 import { eq, desc, inArray, and } from "drizzle-orm";
 
 const app = express();
@@ -600,6 +600,50 @@ app.put("/ingredients/:name/availability", async (req, res) => {
   }
 
   res.json({ name: result[0].name, price_tier: result[0].priceTier, availability: result[0].availability });
+});
+
+// Classify all unclassified ingredients using Claude
+app.post("/ingredients/classify", async (_req, res) => {
+  // Fetch ingredients missing price_tier or availability
+  const all = await db.select().from(ingredients).orderBy(ingredients.name);
+  const unclassified = all.filter((r) => !r.priceTier || !r.availability);
+
+  if (unclassified.length === 0) {
+    res.json({ classified: 0, total: all.length, message: "All ingredients already classified" });
+    return;
+  }
+
+  const names = unclassified.map((r) => r.name);
+  console.log(`[Classify] Sending ${names.length} ingredients to Claude...`);
+
+  try {
+    const results = await classifyIngredients(names);
+    let updated = 0;
+
+    for (const item of results) {
+      const match = unclassified.find((r) => r.name.toLowerCase() === item.name.toLowerCase());
+      if (!match) continue;
+
+      const updates: Record<string, string> = {};
+      if (!match.priceTier && ["cheap", "neutral", "expensive"].includes(item.price_tier)) {
+        updates.priceTier = item.price_tier;
+      }
+      if (!match.availability && ["easy", "neutral", "rare"].includes(item.availability)) {
+        updates.availability = item.availability;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await db.update(ingredients).set(updates).where(eq(ingredients.name, match.name));
+        updated++;
+      }
+    }
+
+    console.log(`[Classify] Updated ${updated}/${names.length} ingredients`);
+    res.json({ classified: updated, total: all.length, sent: names.length });
+  } catch (err: any) {
+    console.error("[Classify]", err.message || err);
+    res.status(500).json({ error: "Classification failed", detail: err.message });
+  }
 });
 
 // Proxy S3 images
