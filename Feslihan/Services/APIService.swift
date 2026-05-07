@@ -134,6 +134,16 @@ enum APIService {
         return true
     }
 
+    /// Delete a recipe from the user's collection (keeps the global recipe).
+    static func deleteUserRecipe(userId: String, recipeId: String) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/users/\(userId)/recipes/\(recipeId)") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 204 else { return false }
+        return true
+    }
+
     /// Fetch instagram user info including profile picture URL.
     static func fetchCreator(username: String) async -> InstagramUserDTO? {
         guard let requestURL = URL(string: "\(baseURL)/creators/\(username)") else { return nil }
