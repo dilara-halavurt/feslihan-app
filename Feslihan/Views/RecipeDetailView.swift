@@ -4,6 +4,11 @@ struct RecipeDetailView: View {
     @Bindable var recipe: Recipe
     @State private var selectedTab = 0
     @State private var profilePicData: Data?
+    @State private var servingMultiplier: Double = 1.0
+
+    private let multiplierOptions: [(label: String, value: Double)] = [
+        ("1/2x", 0.5), ("1x", 1.0), ("2x", 2.0), ("3x", 3.0), ("4x", 4.0), ("6x", 6.0)
+    ]
 
     var body: some View {
         ScrollView {
@@ -219,7 +224,94 @@ struct RecipeDetailView: View {
     // MARK: - Ingredients View
 
     private var ingredientsView: some View {
-        IngredientsView(ingredients: recipe.ingredients)
+        VStack(alignment: .leading, spacing: 16) {
+            // Servings indicator + multiplier pills
+            VStack(spacing: 12) {
+                if let servings = recipe.servings {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.2.fill")
+                            .font(.system(size: 13))
+                        Text("\(Int(Double(servings) * servingMultiplier))")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .foregroundStyle(DS.smoke)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(multiplierOptions, id: \.value) { option in
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    servingMultiplier = option.value
+                                }
+                            } label: {
+                                Text(option.label)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .foregroundStyle(servingMultiplier == option.value ? DS.cream : DS.ink)
+                                    .background(servingMultiplier == option.value ? DS.ink : DS.sand)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Scaled ingredients list
+            IngredientsView(ingredients: scaledIngredients)
+        }
+    }
+
+    private var scaledIngredients: [Ingredient] {
+        guard servingMultiplier != 1.0 else { return recipe.ingredients }
+        return recipe.ingredients.map { ingredient in
+            Ingredient(
+                name: ingredient.name,
+                amount: scaleAmount(ingredient.amount, by: servingMultiplier)
+            )
+        }
+    }
+
+    private func scaleAmount(_ amount: String, by multiplier: Double) -> String {
+        guard !amount.isEmpty else { return amount }
+
+        // Match leading number (integer, decimal, or fraction like 1/2)
+        let pattern = #"^(\d+(?:[.,/]\d+)?)\s*(.*)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: amount, range: NSRange(amount.startIndex..., in: amount)) else {
+            return amount
+        }
+
+        guard let numRange = Range(match.range(at: 1), in: amount) else { return amount }
+        let numStr = String(amount[numRange])
+        let rest = match.range(at: 2).length > 0
+            ? String(amount[Range(match.range(at: 2), in: amount)!])
+            : ""
+
+        let value: Double
+        if numStr.contains("/") {
+            let parts = numStr.split(separator: "/")
+            guard parts.count == 2,
+                  let num = Double(parts[0]),
+                  let den = Double(parts[1]), den != 0 else { return amount }
+            value = num / den
+        } else {
+            guard let parsed = Double(numStr.replacingOccurrences(of: ",", with: ".")) else { return amount }
+            value = parsed
+        }
+
+        let scaled = value * multiplier
+        let formatted: String
+        if scaled == scaled.rounded() && scaled >= 1 {
+            formatted = String(Int(scaled))
+        } else {
+            formatted = String(format: "%.1f", scaled)
+                .replacingOccurrences(of: ".0", with: "")
+        }
+
+        return rest.isEmpty ? formatted : "\(formatted) \(rest)"
     }
 
     // MARK: - Instructions View
