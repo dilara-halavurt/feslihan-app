@@ -22,6 +22,7 @@ final class Recipe {
     var fiberGrams: Double?
     var platformUser: String?
     var platform: String?
+    var folderId: String?
     var createdAt: Date
 
     init(
@@ -42,7 +43,8 @@ final class Recipe {
         fatGrams: Double? = nil,
         fiberGrams: Double? = nil,
         platformUser: String? = nil,
-        platform: String? = nil
+        platform: String? = nil,
+        folderId: String? = nil
     ) {
         self.id = UUID()
         self.title = title
@@ -63,6 +65,7 @@ final class Recipe {
         self.fiberGrams = fiberGrams
         self.platformUser = platformUser
         self.platform = platform
+        self.folderId = folderId
         self.createdAt = Date()
     }
 }

@@ -9,46 +9,27 @@ struct RecipeListView: View {
     @Query(sort: \Recipe.createdAt, order: .reverse) private var recipes: [Recipe]
     @State private var showAddRecipe = false
     @State private var searchText = ""
+    @State private var folders: [FolderDTO] = []
+    @State private var selectedFolder: FolderDTO? = nil
+    @State private var showCreateFolder = false
+    @State private var newFolderName = ""
+    @State private var newFolderEmoji = ""
 
     private var filtered: [Recipe] {
-        if searchText.isEmpty { return recipes }
-        return recipes.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+        let base: [Recipe]
+        if let folder = selectedFolder {
+            base = recipes.filter { $0.folderId == folder.id }
+        } else {
+            base = Array(recipes)
+        }
+        if searchText.isEmpty { return base }
+        return base.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
     }
 
     private let columns = [
         GridItem(.flexible(), spacing: 12),
         GridItem(.flexible(), spacing: 12),
     ]
-
-    private var mostLiked: [Recipe] {
-        recipes
-            .filter { ($0.likesCount ?? 0) > 0 }
-            .sorted { ($0.likesCount ?? 0) > ($1.likesCount ?? 0) }
-            .prefix(10)
-            .map { $0 }
-    }
-
-    private var mostRecent: [Recipe] {
-        Array(recipes.prefix(10))
-    }
-
-    // Group recipes by tags for the featured carousel
-    private var collections: [(title: String, subtitle: String, recipes: [Recipe])] {
-        let tagGroups: [(tag: String, title: String, subtitle: String)] = [
-            ("kahvaltı", "Kahvaltılıklar", "Güne güzel başla"),
-            ("ana yemek", "Ana Yemekler", "Doyurucu ve lezzetli"),
-            ("tatlı", "Tatlılar", "Tatlı bir son"),
-            ("çorba", "Çorbalar", "Sıcacık bir kase"),
-            ("pratik", "Pratik Tarifler", "Hızlı ve kolay"),
-            ("sağlıklı", "Sağlıklı Seçimler", "Hafif ve besleyici"),
-        ]
-
-        return tagGroups.compactMap { group in
-            let matching = recipes.filter { $0.tags.contains(group.tag) }
-            guard matching.count >= 2 else { return nil }
-            return (group.title, group.subtitle, Array(matching.prefix(8)))
-        }
-    }
 
     var body: some View {
         NavigationStack {
@@ -90,74 +71,75 @@ struct RecipeListView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                             .padding(.horizontal, 16)
 
-                            if searchText.isEmpty {
-                                // Featured collections carousel
-                                if !collections.isEmpty {
+                            if searchText.isEmpty && selectedFolder == nil {
+                                // Folders section
+                                if !folders.isEmpty {
                                     VStack(alignment: .leading, spacing: 12) {
-                                        Text("Sana Özel Seçimler")
+                                        Text("Klasörlerim")
                                             .font(.displayTitle())
                                             .foregroundStyle(DS.ink)
                                             .padding(.horizontal, 16)
 
                                         ScrollView(.horizontal, showsIndicators: false) {
                                             HStack(spacing: 12) {
-                                                ForEach(collections, id: \.title) { collection in
-                                                    CollectionCard(
-                                                        title: collection.title,
-                                                        subtitle: collection.subtitle,
-                                                        recipes: collection.recipes
-                                                    )
+                                                // Create folder button
+                                                Button {
+                                                    showCreateFolder = true
+                                                } label: {
+                                                    VStack(spacing: 8) {
+                                                        ZStack {
+                                                            RoundedRectangle(cornerRadius: 14)
+                                                                .strokeBorder(DS.dust.opacity(0.4), style: StrokeStyle(lineWidth: 1.5, dash: [6]))
+                                                                .frame(width: 100, height: 100)
+                                                            Image(systemName: "plus")
+                                                                .font(.system(size: 24, weight: .medium))
+                                                                .foregroundStyle(DS.dust)
+                                                        }
+                                                        Text("Yeni Klasör")
+                                                            .font(.system(size: 12, weight: .medium))
+                                                            .foregroundStyle(DS.smoke)
+                                                    }
                                                 }
-                                            }
-                                            .padding(.horizontal, 16)
-                                        }
-                                    }
-                                }
+                                                .buttonStyle(.plain)
 
-                                // Most liked banner
-                                if !mostLiked.isEmpty {
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        Text("En Beğenilenler")
-                                            .font(.displayTitle())
-                                            .foregroundStyle(DS.ink)
-                                            .padding(.horizontal, 16)
-
-                                        ScrollView(.horizontal, showsIndicators: false) {
-                                            HStack(spacing: 12) {
-                                                ForEach(mostLiked) { recipe in
-                                                    NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
-                                                        RecipeCard(recipe: recipe)
-                                                            .frame(width: 160)
+                                                ForEach(folders) { folder in
+                                                    Button {
+                                                        selectedFolder = folder
+                                                    } label: {
+                                                        FolderCard(folder: folder, recipes: recipes)
                                                     }
                                                     .buttonStyle(.plain)
-                                                }
-                                            }
-                                            .padding(.horizontal, 16)
-                                        }
-                                    }
-                                }
-
-                                // Most recent banner
-                                if !mostRecent.isEmpty {
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        Text("Yeni Eklenenler")
-                                            .font(.displayTitle())
-                                            .foregroundStyle(DS.ink)
-                                            .padding(.horizontal, 16)
-
-                                        ScrollView(.horizontal, showsIndicators: false) {
-                                            HStack(spacing: 12) {
-                                                ForEach(mostRecent) { recipe in
-                                                    NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
-                                                        RecipeCard(recipe: recipe)
-                                                            .frame(width: 160)
+                                                    .contextMenu {
+                                                        Button(role: .destructive) {
+                                                            Task { await deleteFolder(folder) }
+                                                        } label: {
+                                                            Label("Klasörü Sil", systemImage: "trash")
+                                                        }
                                                     }
-                                                    .buttonStyle(.plain)
                                                 }
                                             }
                                             .padding(.horizontal, 16)
                                         }
                                     }
+                                } else {
+                                    // Show create folder prompt when no folders exist
+                                    Button {
+                                        showCreateFolder = true
+                                    } label: {
+                                        HStack(spacing: 10) {
+                                            Image(systemName: "folder.badge.plus")
+                                                .font(.system(size: 18, weight: .medium))
+                                            Text("Klasör Oluştur")
+                                                .font(.system(size: 15, weight: .medium))
+                                        }
+                                        .foregroundStyle(DS.ember)
+                                        .padding(.vertical, 12)
+                                        .padding(.horizontal, 20)
+                                        .background(DS.ember.opacity(0.1))
+                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 16)
                                 }
 
                                 // All recipes grid
@@ -173,6 +155,35 @@ struct RecipeListView: View {
                                                 RecipeCard(recipe: recipe)
                                             }
                                             .buttonStyle(.plain)
+                                            .contextMenu {
+                                                folderContextMenu(for: recipe)
+                                            }
+                                        }
+                                    }
+                                    .padding(.horizontal, 16)
+                                }
+                            } else if selectedFolder != nil {
+                                // Folder contents
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("\(filtered.count) tarif")
+                                        .font(.label())
+                                        .foregroundStyle(DS.smoke)
+                                        .padding(.horizontal, 16)
+
+                                    LazyVGrid(columns: columns, spacing: 12) {
+                                        ForEach(filtered) { recipe in
+                                            NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
+                                                RecipeCard(recipe: recipe)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .contextMenu {
+                                                Button {
+                                                    Task { await moveRecipeToFolder(recipe, folder: nil) }
+                                                } label: {
+                                                    Label("Klasörden Çıkar", systemImage: "folder.badge.minus")
+                                                }
+                                                folderContextMenu(for: recipe)
+                                            }
                                         }
                                     }
                                     .padding(.horizontal, 16)
@@ -203,19 +214,48 @@ struct RecipeListView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if let onBack {
+                if selectedFolder != nil {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        BackButton {
+                            selectedFolder = nil
+                        }
+                    }
+                } else if let onBack {
                     ToolbarItem(placement: .navigationBarLeading) {
                         BackButton(action: onBack)
                     }
                 }
                 ToolbarItem(placement: .principal) {
-                    Text("Tariflerim")
-                        .font(.displayTitle())
-                        .foregroundStyle(DS.ink)
+                    if let folder = selectedFolder {
+                        HStack(spacing: 6) {
+                            if let emoji = folder.emoji, !emoji.isEmpty {
+                                Text(emoji)
+                            }
+                            Text(folder.name)
+                                .font(.displayTitle())
+                                .foregroundStyle(DS.ink)
+                        }
+                    } else {
+                        Text("Tariflerim")
+                            .font(.displayTitle())
+                            .foregroundStyle(DS.ink)
+                    }
+                }
+            }
+            .alert("Yeni Klasör", isPresented: $showCreateFolder) {
+                TextField("Klasör adı", text: $newFolderName)
+                TextField("Emoji (opsiyonel)", text: $newFolderEmoji)
+                Button("Oluştur") {
+                    Task { await createFolder() }
+                }
+                Button("İptal", role: .cancel) {
+                    newFolderName = ""
+                    newFolderEmoji = ""
                 }
             }
             .task {
                 await syncFromBackend()
+                await loadFolders()
             }
         }
     }
@@ -256,6 +296,7 @@ struct RecipeListView: View {
                 existing.carbsGrams = dto.carbs_grams
                 existing.fatGrams = dto.fat_grams
                 existing.fiberGrams = dto.fiber_grams
+                existing.folderId = dto.folder_id
             } else {
                 let thumbData = await CaptionService.downloadImage(from: fullThumbURL)
                 modelContext.insert(dto.toRecipe(thumbnailData: thumbData))
@@ -264,86 +305,129 @@ struct RecipeListView: View {
 
         try? modelContext.save()
     }
+
+    private func loadFolders() async {
+        guard let userId = Clerk.shared.user?.id else { return }
+        folders = await APIService.fetchFolders(userId: userId)
+    }
+
+    private func createFolder() async {
+        guard let userId = Clerk.shared.user?.id, !newFolderName.isEmpty else { return }
+        if let folder = await APIService.createFolder(
+            userId: userId,
+            name: newFolderName,
+            emoji: newFolderEmoji.isEmpty ? nil : newFolderEmoji
+        ) {
+            folders.append(folder)
+        }
+        newFolderName = ""
+        newFolderEmoji = ""
+    }
+
+    private func deleteFolder(_ folder: FolderDTO) async {
+        guard await APIService.deleteFolder(id: folder.id) else { return }
+        folders.removeAll { $0.id == folder.id }
+        // Clear folderId on local recipes
+        for recipe in recipes where recipe.folderId == folder.id {
+            recipe.folderId = nil
+        }
+        try? modelContext.save()
+    }
+
+    @ViewBuilder
+    private func folderContextMenu(for recipe: Recipe) -> some View {
+        if !folders.isEmpty {
+            Menu("Klasöre Taşı") {
+                ForEach(folders) { folder in
+                    Button {
+                        Task { await moveRecipeToFolder(recipe, folder: folder) }
+                    } label: {
+                        Label(
+                            "\(folder.emoji ?? "") \(folder.name)",
+                            systemImage: recipe.folderId == folder.id ? "checkmark.circle.fill" : "folder"
+                        )
+                    }
+                }
+                if recipe.folderId != nil {
+                    Divider()
+                    Button {
+                        Task { await moveRecipeToFolder(recipe, folder: nil) }
+                    } label: {
+                        Label("Klasörden Çıkar", systemImage: "folder.badge.minus")
+                    }
+                }
+            }
+        }
+    }
+
+    private func moveRecipeToFolder(_ recipe: Recipe, folder: FolderDTO?) async {
+        guard let userId = Clerk.shared.user?.id else { return }
+        // Fetch the backend recipe ID via lookup
+        guard let url = recipe.sourceURL else { return }
+        guard let dto = await APIService.lookup(url: url), let backendId = dto.id else { return }
+
+        if await APIService.moveRecipeToFolder(userId: userId, recipeId: backendId, folderId: folder?.id) {
+            recipe.folderId = folder?.id
+            try? modelContext.save()
+            await loadFolders() // refresh counts
+        }
+    }
 }
 
-// MARK: - Collection Card (Hero Carousel)
+// MARK: - Folder Card
 
-private struct CollectionCard: View {
-    let title: String
-    let subtitle: String
+private struct FolderCard: View {
+    let folder: FolderDTO
     let recipes: [Recipe]
 
-    // Use the first recipe with a thumbnail as hero image
-    private var heroRecipe: Recipe? {
-        recipes.first { $0.thumbnailData != nil }
+    private var folderRecipes: [Recipe] {
+        recipes.filter { $0.folderId == folder.id }
     }
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            // Background image
-            Group {
-                if let data = heroRecipe?.thumbnailData,
+        VStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(DS.sand)
+                    .frame(width: 100, height: 100)
+
+                if let first = folderRecipes.first,
+                   let data = first.thumbnailData,
                    let uiImage = UIImage(data: data) {
                     Image(uiImage: uiImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
+                        .frame(width: 100, height: 100)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(.black.opacity(0.2))
+                        )
                 } else {
-                    DS.stone
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(DS.dust)
+                }
+
+                // Emoji overlay
+                if let emoji = folder.emoji, !emoji.isEmpty {
+                    Text(emoji)
+                        .font(.system(size: 28))
                 }
             }
-            .frame(width: 300, height: 360)
-            .clipped()
 
-            // Gradient overlay
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.7)],
-                startPoint: .center,
-                endPoint: .bottom
-            )
+            VStack(spacing: 2) {
+                Text(folder.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(DS.ink)
+                    .lineLimit(1)
 
-            // Content overlay
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title)
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-
-                Text(subtitle)
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.8))
-
-                HStack(spacing: 8) {
-                    // Small recipe thumbnails
-                    HStack(spacing: -8) {
-                        ForEach(Array(recipes.prefix(3).enumerated()), id: \.offset) { _, recipe in
-                            if let data = recipe.thumbnailData,
-                               let uiImage = UIImage(data: data) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 32, height: 32)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(.white, lineWidth: 1.5)
-                                    )
-                            }
-                        }
-                    }
-
-                    Spacer()
-
-                    Text("Tarifleri Gör")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(.white.opacity(0.25))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
+                Text("\(folder.recipe_count ?? folderRecipes.count) tarif")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DS.smoke)
             }
-            .padding(16)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .frame(width: 100)
     }
 }
 

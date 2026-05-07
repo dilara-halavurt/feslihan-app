@@ -921,6 +921,7 @@ struct MealPlanResultView: View {
     @State private var userRecipes: [RecipeDTO] = []
     @State private var isSaving = false
     @State private var isSaved = false
+    @State private var showShoppingList = false
     @State private var addingToDayId: String?
     @State private var editingMeal: MealPlanMeal?
 
@@ -1025,35 +1026,30 @@ struct MealPlanResultView: View {
                     .disabled(isSaved || isSaving)
                     .padding(.horizontal, 20)
 
-                    // Shopping list (appears after saving)
-                    if isSaved {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Image(systemName: "cart.fill")
-                                    .foregroundStyle(DS.ember)
-                                Text("Alışveriş Listesi")
-                                    .font(.sectionHeader())
-                                    .foregroundStyle(DS.ink)
-                            }
-
-                            ForEach(plan.shoppingList, id: \.self) { item in
-                                HStack(spacing: 10) {
-                                    Image(systemName: "circle")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(DS.dust)
-                                    Text(item)
-                                        .font(.bodyText())
-                                        .foregroundStyle(DS.ink)
-                                }
-                            }
+                    // Shopping list button
+                    Button {
+                        showShoppingList = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "cart.fill")
+                                .font(.system(size: 16))
+                            Text("Alışveriş Listesi")
+                                .font(.system(size: 16, weight: .semibold))
+                            Spacer()
+                            Text("\(plan.shoppingList.count) malzeme")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(DS.smoke)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(DS.dust)
                         }
                         .padding(16)
+                        .foregroundStyle(DS.ink)
                         .background(DS.sand)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 20)
 
                     Spacer().frame(height: 40)
                 }
@@ -1064,6 +1060,11 @@ struct MealPlanResultView: View {
             // Fetch user recipes for swapping
             if let userId = await ClerkKit.Clerk.shared.user?.id {
                 userRecipes = await APIService.fetchUserRecipes(userId: userId)
+            }
+        }
+        .sheet(isPresented: $showShoppingList) {
+            if let plan {
+                ShoppingListSheet(items: plan.shoppingList)
             }
         }
         .sheet(item: $swappingMeal) { meal in
@@ -1380,6 +1381,47 @@ struct MealPlanMeal: Identifiable {
     var description: String?
     var calories: Int?
     var ingredients: [String]
+}
+
+// MARK: - Shopping List Sheet
+
+struct ShoppingListSheet: View {
+    let items: [String]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                DS.cream.ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "cart.fill")
+                                .foregroundStyle(DS.ember)
+                            Text("\(items.count) malzeme")
+                                .font(.label())
+                                .foregroundStyle(DS.smoke)
+                        }
+                        .padding(.horizontal, 20)
+
+                        IngredientsView(items: items)
+                            .padding(.horizontal, 20)
+                    }
+                    .padding(.top, 8)
+                    .padding(.bottom, 40)
+                }
+            }
+            .navigationTitle("Alışveriş Listesi")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Kapat") { dismiss() }
+                        .foregroundStyle(DS.ember)
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Recipe Swap Sheet

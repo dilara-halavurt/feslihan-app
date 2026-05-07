@@ -13,13 +13,13 @@ enum DS {
     static let smoke = Color(hex: 0x8E8E93)
     static let dust = Color(hex: 0xC7C7CC)
 
-    // Accent
-    static let ember = Color(hex: 0x2D2D2D)
-    static let emberLight = Color(hex: 0xF2F2F7)
-    static let emberDark = Color(hex: 0x1A1A1A)
+    // Accent (basil green)
+    static let ember = Color(hex: 0x2D6A4F)
+    static let emberLight = Color(hex: 0xE8F5E9)
+    static let emberDark = Color(hex: 0x1B4332)
 
     // Supporting
-    static let pine = Color(hex: 0x34C759)
+    static let pine = Color(hex: 0x52B788)
     static let honey = Color(hex: 0xFF9500)
 }
 

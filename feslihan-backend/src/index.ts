@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import { db } from "./db.js";
-import { recipes, ingredients, tags, platformCreators, userRecipes, users, mealPlans } from "./schema.js";
+import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans } from "./schema.js";
 import { uploadImage, s3KeyFromUrl, getImage } from "./s3.js";
 import { analyzeRecipe, generateMealPlan } from "./ai.js";
 import { eq, desc, inArray, and } from "drizzle-orm";
@@ -442,10 +442,13 @@ app.get("/recipes", async (req, res) => {
   res.json(rewriteThumbnail(toSnake(result)));
 });
 
-// Get recipes for a user
+// Get recipes for a user (includes folder info)
 app.get("/users/:userId/recipes", async (req, res) => {
   const mappings = await db
-    .select({ recipeId: userRecipes.recipeId })
+    .select({
+      recipeId: userRecipes.recipeId,
+      folderId: userRecipes.folderId,
+    })
     .from(userRecipes)
     .where(eq(userRecipes.userId, req.params.userId));
 
@@ -461,7 +464,14 @@ app.get("/users/:userId/recipes", async (req, res) => {
     .where(inArray(recipes.id, recipeIds))
     .orderBy(desc(recipes.createdAt));
 
-  res.json(rewriteThumbnail(toSnake(result)));
+  // Attach folder_id to each recipe
+  const folderMap = new Map(mappings.map((m) => [m.recipeId, m.folderId]));
+  const enriched = result.map((r) => ({
+    ...r,
+    folderId: folderMap.get(r.id) ?? null,
+  }));
+
+  res.json(rewriteThumbnail(toSnake(enriched)));
 });
 
 // Get single recipe
@@ -651,6 +661,119 @@ app.get("/creators/:username", async (req, res) => {
         : user.profilePictureUrl
       : null,
   });
+});
+
+// --- Folders ---
+
+// List user's folders with recipe counts
+app.get("/users/:userId/folders", async (req, res) => {
+  const folders = await db
+    .select()
+    .from(userFolders)
+    .where(eq(userFolders.userId, req.params.userId))
+    .orderBy(userFolders.sortOrder);
+
+  // Get recipe counts per folder
+  const mappings = await db
+    .select({ folderId: userRecipes.folderId, recipeId: userRecipes.recipeId })
+    .from(userRecipes)
+    .where(eq(userRecipes.userId, req.params.userId));
+
+  const countMap = new Map<string, number>();
+  for (const m of mappings) {
+    if (m.folderId) {
+      countMap.set(m.folderId, (countMap.get(m.folderId) || 0) + 1);
+    }
+  }
+
+  const result = folders.map((f) => ({
+    ...toSnake(f),
+    recipe_count: countMap.get(f.id) || 0,
+  }));
+
+  res.json(result);
+});
+
+// Create folder
+app.post("/folders", async (req, res) => {
+  const { user_id, name, emoji } = req.body;
+  if (!user_id || !name) {
+    res.status(400).json({ error: "user_id and name required" });
+    return;
+  }
+
+  // Get max sort order
+  const existing = await db
+    .select({ sortOrder: userFolders.sortOrder })
+    .from(userFolders)
+    .where(eq(userFolders.userId, user_id))
+    .orderBy(desc(userFolders.sortOrder))
+    .limit(1);
+
+  const nextOrder = (existing[0]?.sortOrder ?? -1) + 1;
+
+  const result = await db
+    .insert(userFolders)
+    .values({ userId: user_id, name, emoji: emoji || null, sortOrder: nextOrder })
+    .returning();
+
+  res.status(201).json({ ...toSnake(result[0]), recipe_count: 0 });
+});
+
+// Update folder
+app.put("/folders/:id", async (req, res) => {
+  const { name, emoji, sort_order } = req.body;
+  const updates: Record<string, any> = {};
+  if (name !== undefined) updates.name = name;
+  if (emoji !== undefined) updates.emoji = emoji;
+  if (sort_order !== undefined) updates.sortOrder = sort_order;
+
+  const result = await db
+    .update(userFolders)
+    .set(updates)
+    .where(eq(userFolders.id, req.params.id))
+    .returning();
+
+  if (result.length === 0) {
+    res.status(404).json({ error: "Folder not found" });
+    return;
+  }
+
+  res.json(toSnake(result[0]));
+});
+
+// Delete folder (recipes become unfoldered, not deleted)
+app.delete("/folders/:id", async (req, res) => {
+  await db
+    .update(userRecipes)
+    .set({ folderId: null })
+    .where(eq(userRecipes.folderId, req.params.id));
+
+  await db.delete(userFolders).where(eq(userFolders.id, req.params.id));
+  res.status(204).send();
+});
+
+// Move recipe to folder (or remove from folder with folder_id: null)
+app.put("/users/:userId/recipes/:recipeId/folder", async (req, res) => {
+  const { folder_id } = req.body;
+
+  const result = await db
+    .update(userRecipes)
+    .set({ folderId: folder_id || null })
+    .where(
+      and(
+        eq(userRecipes.userId, req.params.userId),
+        eq(userRecipes.recipeId, req.params.recipeId)
+      )
+    )
+    .returning();
+
+  if (result.length === 0) {
+    res.status(404).json({ error: "User recipe not found" });
+    return;
+  }
+
+  res.json({ ok: true });
 });
 
 // Save a meal plan

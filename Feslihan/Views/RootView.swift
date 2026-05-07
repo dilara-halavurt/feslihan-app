@@ -22,7 +22,7 @@ struct RootView: View {
                     Spacer()
 
                     VStack(spacing: 12) {
-                        Image(systemName: "fork.knife.circle.fill")
+                        Image(systemName: "leaf.circle.fill")
                             .font(.system(size: 72, weight: .medium))
                             .foregroundStyle(DS.ember)
 
@@ -30,7 +30,7 @@ struct RootView: View {
                             .font(.system(size: 36, weight: .bold, design: .rounded))
                             .foregroundStyle(DS.ink)
 
-                        Text("Tarif koleksiyonun")
+                        Text("Anne ne yesek?")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(DS.smoke)
                     }

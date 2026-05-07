@@ -92,6 +92,48 @@ enum APIService {
         return try? JSONDecoder().decode(RecipeDTO.self, from: data)
     }
 
+    // MARK: - Folders
+
+    static func fetchFolders(userId: String) async -> [FolderDTO] {
+        guard let url = URL(string: "\(baseURL)/users/\(userId)/folders") else { return [] }
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+        return (try? JSONDecoder().decode([FolderDTO].self, from: data)) ?? []
+    }
+
+    static func createFolder(userId: String, name: String, emoji: String?) async -> FolderDTO? {
+        guard let url = URL(string: "\(baseURL)/folders") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["user_id": userId, "name": name, "emoji": emoji ?? ""]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 201 else { return nil }
+        return try? JSONDecoder().decode(FolderDTO.self, from: data)
+    }
+
+    static func deleteFolder(id: String) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/folders/\(id)") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 204 else { return false }
+        return true
+    }
+
+    static func moveRecipeToFolder(userId: String, recipeId: String, folderId: String?) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/users/\(userId)/recipes/\(recipeId)/folder") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any?] = ["folder_id": folderId]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body.compactMapValues { $0 })
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200 else { return false }
+        return true
+    }
+
     /// Fetch instagram user info including profile picture URL.
     static func fetchCreator(username: String) async -> InstagramUserDTO? {
         guard let requestURL = URL(string: "\(baseURL)/creators/\(username)") else { return nil }
@@ -104,6 +146,15 @@ enum APIService {
 
         return try? JSONDecoder().decode(InstagramUserDTO.self, from: data)
     }
+}
+
+struct FolderDTO: Codable, Identifiable {
+    var id: String
+    var user_id: String
+    var name: String
+    var emoji: String?
+    var sort_order: Int
+    var recipe_count: Int?
 }
 
 struct InstagramUserDTO: Codable {
@@ -147,6 +198,7 @@ struct RecipeDTO: Codable {
 
     var requested_by: String
     var user_id: String?
+    var folder_id: String?
 }
 
 extension RecipeDTO {
@@ -218,7 +270,8 @@ extension RecipeDTO {
             fatGrams: fat_grams,
             fiberGrams: fiber_grams,
             platformUser: platform_user,
-            platform: platform
+            platform: platform,
+            folderId: folder_id
         )
     }
 

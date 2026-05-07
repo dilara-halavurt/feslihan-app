@@ -203,17 +203,7 @@ struct AddRecipeView: View {
                         .font(.sectionHeader())
                         .foregroundStyle(DS.ink)
 
-                    ForEach(recipe.ingredients) { ingredient in
-                        HStack {
-                            Circle()
-                                .fill(DS.ember)
-                                .frame(width: 6, height: 6)
-                            Text("\(ingredient.amount) \(ingredient.name)")
-                                .font(.bodyText())
-                                .foregroundStyle(DS.ink)
-                        }
-                        .padding(.vertical, 2)
-                    }
+                    IngredientsView(ingredients: recipe.ingredients)
 
                     Rectangle()
                         .fill(DS.stone)

@@ -149,6 +149,17 @@ struct SavedPlanItem: Identifiable, Codable {
     var avgCalories: Int {
         plan.avg_calories_per_day ?? 0
     }
+
+    var peopleCount: String {
+        // Parse from name like "Haftalık - 2 Kişi"
+        if let match = name.range(of: #"(\d+\+?)\s*[Kk]işi"#, options: .regularExpression) {
+            let sub = name[match]
+            if let numMatch = sub.range(of: #"\d+\+?"#, options: .regularExpression) {
+                return String(sub[numMatch])
+            }
+        }
+        return "-"
+    }
 }
 
 struct SavedPlanData: Codable {
@@ -209,7 +220,7 @@ private struct SavedPlanCard: View {
             }
 
             HStack(spacing: 8) {
-                StatPill(icon: "person.2", value: "-", label: "Kişi")
+                StatPill(icon: "person.2", value: plan.peopleCount, label: "Kişi")
                 StatPill(icon: "fork.knife", value: "\(plan.totalMeals)", label: "Tarif")
                 StatPill(icon: "flame", value: plan.avgCalories > 0 ? "\(plan.avgCalories)" : "-", label: "kcal/gün")
             }

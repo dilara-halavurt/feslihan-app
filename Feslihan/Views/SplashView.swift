@@ -17,7 +17,7 @@ struct SplashView: View {
                 DS.ember.ignoresSafeArea()
 
                 VStack(spacing: 16) {
-                    Image(systemName: "fork.knife")
+                    Image(systemName: "leaf.fill")
                         .font(.system(size: 48, weight: .medium))
                         .foregroundStyle(DS.cream)
                         .scaleEffect(iconScale)
@@ -29,7 +29,7 @@ struct SplashView: View {
                         .offset(y: titleOffset)
                         .opacity(titleOpacity)
 
-                    Text("Türk tarif koleksiyonun")
+                    Text("Anne ne yesek?")
                         .font(.bodyText())
                         .foregroundStyle(DS.cream.opacity(0.7))
                         .opacity(subtitleOpacity)

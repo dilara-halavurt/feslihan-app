@@ -219,28 +219,7 @@ struct RecipeDetailView: View {
     // MARK: - Ingredients View
 
     private var ingredientsView: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(recipe.ingredients.enumerated()), id: \.element.id) { index, ingredient in
-                HStack(spacing: 12) {
-                    Text(ingredient.amount)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(DS.smoke)
-                        .frame(width: 80, alignment: .leading)
-
-                    Text(ingredient.name)
-                        .font(.system(size: 15, weight: .regular))
-                        .foregroundStyle(DS.ink)
-
-                    Spacer()
-                }
-                .padding(.vertical, 10)
-                .padding(.horizontal, 4)
-
-                if index < recipe.ingredients.count - 1 {
-                    Divider()
-                }
-            }
-        }
+        IngredientsView(ingredients: recipe.ingredients)
     }
 
     // MARK: - Instructions View

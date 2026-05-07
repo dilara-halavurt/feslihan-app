@@ -129,6 +129,23 @@ export const tags = pgTable("tags", {
     .defaultNow(),
 });
 
+export const userFolders = pgTable("user_folders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id", { length: 255 })
+    .notNull()
+    .references(() => users.clerkId),
+  name: varchar("name", { length: 255 }).notNull(),
+  emoji: varchar("emoji", { length: 10 }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
 export const userRecipes = pgTable("user_recipes", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: varchar("user_id", { length: 255 })
@@ -137,6 +154,8 @@ export const userRecipes = pgTable("user_recipes", {
   recipeId: uuid("recipe_id")
     .notNull()
     .references(() => recipes.id),
+  folderId: uuid("folder_id")
+    .references(() => userFolders.id),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
