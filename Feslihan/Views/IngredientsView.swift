@@ -5,6 +5,7 @@ import SwiftUI
 struct IngredientsView: View {
     let ingredients: [Ingredient]
     @State private var priceTiers: [String: String] = [:]
+    @State private var availabilityIcons: [String: String] = [:]
 
     init(ingredients: [Ingredient]) {
         self.ingredients = ingredients
@@ -32,6 +33,12 @@ struct IngredientsView: View {
 
                     Spacer()
 
+                    if let icon = availabilityIcons[ingredient.name.lowercased()] {
+                        Image(systemName: icon)
+                            .font(.system(size: 13))
+                            .foregroundStyle(availabilityColor(icon))
+                    }
+
                     if let tier = priceTiers[ingredient.name.lowercased()] {
                         Text(tier)
                             .font(.system(size: 12, weight: .medium))
@@ -49,12 +56,17 @@ struct IngredientsView: View {
         .task {
             let allIngredients = await APIService.fetchIngredients()
             var tiers: [String: String] = [:]
+            var icons: [String: String] = [:]
             for dto in allIngredients {
                 if let emoji = dto.priceTierEmoji {
                     tiers[dto.name.lowercased()] = emoji
                 }
+                if let icon = dto.availabilityIcon {
+                    icons[dto.name.lowercased()] = icon
+                }
             }
             priceTiers = tiers
+            availabilityIcons = icons
         }
     }
 
@@ -63,6 +75,15 @@ struct IngredientsView: View {
         case "₺": return Color(hex: 0x2D6A4F)
         case "₺₺": return DS.smoke
         case "₺₺₺": return Color(hex: 0xC0392B)
+        default: return DS.smoke
+        }
+    }
+
+    private func availabilityColor(_ icon: String) -> Color {
+        switch icon {
+        case "checkmark.circle": return Color(hex: 0x2D6A4F)
+        case "minus.circle": return DS.smoke
+        case "exclamationmark.circle": return Color(hex: 0xE67E22)
         default: return DS.smoke
         }
     }
