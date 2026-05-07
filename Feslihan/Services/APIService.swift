@@ -46,8 +46,8 @@ enum APIService {
         return (try? JSONDecoder().decode([RecipeDTO].self, from: data)) ?? []
     }
 
-    /// Fetch all known ingredient names from the backend.
-    static func fetchIngredients() async -> [String] {
+    /// Fetch all known ingredients (with price tier) from the backend.
+    static func fetchIngredients() async -> [IngredientDTO] {
         guard let requestURL = URL(string: "\(baseURL)/ingredients") else { return [] }
 
         guard let (data, response) = try? await URLSession.shared.data(from: requestURL),
@@ -56,7 +56,7 @@ enum APIService {
             return []
         }
 
-        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+        return (try? JSONDecoder().decode([IngredientDTO].self, from: data)) ?? []
     }
 
     /// Fetch all predefined tags from the backend.
@@ -165,6 +165,21 @@ struct FolderDTO: Codable, Identifiable {
     var emoji: String?
     var sort_order: Int
     var recipe_count: Int?
+}
+
+struct IngredientDTO: Codable, Identifiable {
+    var id: String { name }
+    let name: String
+    let price_tier: String?
+
+    var priceTierEmoji: String? {
+        switch price_tier {
+        case "cheap": return "₺"
+        case "neutral": return "₺₺"
+        case "expensive": return "₺₺₺"
+        default: return nil
+        }
+    }
 }
 
 struct InstagramUserDTO: Codable {
