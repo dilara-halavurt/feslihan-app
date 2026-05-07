@@ -31,6 +31,7 @@ export const users = pgTable("users", {
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
 export type User = typeof users.$inferSelect;
@@ -61,6 +62,8 @@ export const platformCreators = pgTable("platform_creators", {
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  createdBy: varchar("created_by", { length: 255 }),
 });
 
 export const recipes = pgTable("recipes", {
@@ -111,6 +114,7 @@ export const recipes = pgTable("recipes", {
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
 export const ingredients = pgTable("ingredients", {
@@ -119,6 +123,12 @@ export const ingredients = pgTable("ingredients", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  createdBy: varchar("created_by", { length: 255 }),
 });
 
 export const tags = pgTable("tags", {
@@ -127,6 +137,12 @@ export const tags = pgTable("tags", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  createdBy: varchar("created_by", { length: 255 }),
 });
 
 export const userFolders = pgTable("user_folders", {
@@ -144,6 +160,7 @@ export const userFolders = pgTable("user_folders", {
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
 export const userRecipes = pgTable("user_recipes", {
@@ -159,6 +176,11 @@ export const userRecipes = pgTable("user_recipes", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
 export const mealPlans = pgTable("meal_plans", {
@@ -172,6 +194,11 @@ export const mealPlans = pgTable("meal_plans", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
 export type Recipe = typeof recipes.$inferSelect;
