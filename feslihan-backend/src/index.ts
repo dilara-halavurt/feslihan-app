@@ -549,13 +549,35 @@ app.post("/users/sync", async (req, res) => {
   res.json({ ok: true });
 });
 
-// List all known ingredients
+// List all known ingredients (with price tier)
 app.get("/ingredients", async (_req, res) => {
   const result = await db
     .select()
     .from(ingredients)
     .orderBy(ingredients.name);
-  res.json(result.map((r) => r.name));
+  res.json(result.map((r) => ({ name: r.name, price_tier: r.priceTier })));
+});
+
+// Update price tier for an ingredient
+app.put("/ingredients/:name/price-tier", async (req, res) => {
+  const { price_tier } = req.body;
+  if (!["cheap", "neutral", "expensive"].includes(price_tier)) {
+    res.status(400).json({ error: "price_tier must be cheap, neutral, or expensive" });
+    return;
+  }
+
+  const result = await db
+    .update(ingredients)
+    .set({ priceTier: price_tier })
+    .where(eq(ingredients.name, req.params.name))
+    .returning();
+
+  if (result.length === 0) {
+    res.status(404).json({ error: "Ingredient not found" });
+    return;
+  }
+
+  res.json({ name: result[0].name, price_tier: result[0].priceTier });
 });
 
 // Proxy S3 images
