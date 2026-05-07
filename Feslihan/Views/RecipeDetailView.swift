@@ -340,7 +340,7 @@ struct RecipeDetailView: View {
                     // Calories header
                     if let cal = recipe.caloriesTotalKcal {
                         VStack(spacing: 4) {
-                            Text("\(Int(cal))")
+                            Text("\(Int(cal * servingMultiplier))")
                                 .font(.system(size: 40, weight: .bold, design: .rounded))
                                 .foregroundStyle(DS.ink)
                             Text("toplam kcal")
@@ -349,7 +349,7 @@ struct RecipeDetailView: View {
 
                             if let perServing = recipe.caloriesPerServingKcal,
                                let servings = recipe.servings {
-                                Text("\(Int(perServing)) kcal / \(servings) kişilik")
+                                Text("\(Int(perServing)) kcal / \(Int(Double(servings) * servingMultiplier)) kişilik")
                                     .font(.system(size: 12, weight: .regular))
                                     .foregroundStyle(DS.smoke)
                             }
@@ -363,16 +363,16 @@ struct RecipeDetailView: View {
                     // Macro bars
                     VStack(spacing: 12) {
                         if let protein = recipe.proteinGrams {
-                            macroRow(label: "Protein", value: protein, color: Color(hex: 0x4ECDC4), total: macroTotal)
+                            macroRow(label: "Protein", value: protein * servingMultiplier, color: Color(hex: 0x4ECDC4), total: macroTotal)
                         }
                         if let carbs = recipe.carbsGrams {
-                            macroRow(label: "Karbonhidrat", value: carbs, color: Color(hex: 0xF7DC6F), total: macroTotal)
+                            macroRow(label: "Karbonhidrat", value: carbs * servingMultiplier, color: Color(hex: 0xF7DC6F), total: macroTotal)
                         }
                         if let fat = recipe.fatGrams {
-                            macroRow(label: "Yağ", value: fat, color: Color(hex: 0xF1948A), total: macroTotal)
+                            macroRow(label: "Yağ", value: fat * servingMultiplier, color: Color(hex: 0xF1948A), total: macroTotal)
                         }
                         if let fiber = recipe.fiberGrams {
-                            macroRow(label: "Lif", value: fiber, color: Color(hex: 0x82E0AA), total: macroTotal)
+                            macroRow(label: "Lif", value: fiber * servingMultiplier, color: Color(hex: 0x82E0AA), total: macroTotal)
                         }
                     }
                 }
@@ -392,7 +392,7 @@ struct RecipeDetailView: View {
     }
 
     private var macroTotal: Double {
-        (recipe.proteinGrams ?? 0) + (recipe.carbsGrams ?? 0) + (recipe.fatGrams ?? 0) + (recipe.fiberGrams ?? 0)
+        ((recipe.proteinGrams ?? 0) + (recipe.carbsGrams ?? 0) + (recipe.fatGrams ?? 0) + (recipe.fiberGrams ?? 0)) * servingMultiplier
     }
 
     private func macroRow(label: String, value: Double, color: Color, total: Double) -> some View {
