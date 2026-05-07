@@ -14,6 +14,7 @@ struct RecipeListView: View {
     @State private var showCreateFolder = false
     @State private var newFolderName = ""
     @State private var newFolderEmoji = ""
+    @State private var recipeToDelete: Recipe?
 
     private var filtered: [Recipe] {
         let base: [Recipe]
@@ -253,6 +254,21 @@ struct RecipeListView: View {
                     newFolderEmoji = ""
                 }
             }
+            .alert("Tarifi Sil", isPresented: Binding(
+                get: { recipeToDelete != nil },
+                set: { if !$0 { recipeToDelete = nil } }
+            )) {
+                Button("Sil", role: .destructive) {
+                    if let recipe = recipeToDelete {
+                        Task { await deleteRecipe(recipe) }
+                    }
+                }
+                Button("İptal", role: .cancel) {
+                    recipeToDelete = nil
+                }
+            } message: {
+                Text("Bu tarif koleksiyonundan kaldırılacak. Emin misin?")
+            }
             .task {
                 await syncFromBackend()
                 await loadFolders()
@@ -357,6 +373,24 @@ struct RecipeListView: View {
                     }
                 }
             }
+        }
+        Divider()
+        Button(role: .destructive) {
+            recipeToDelete = recipe
+        } label: {
+            Label("Tarifi Sil", systemImage: "trash")
+        }
+    }
+
+    private func deleteRecipe(_ recipe: Recipe) async {
+        guard let userId = Clerk.shared.user?.id,
+              let url = recipe.sourceURL,
+              let dto = await APIService.lookup(url: url),
+              let backendId = dto.id else { return }
+
+        if await APIService.deleteUserRecipe(userId: userId, recipeId: backendId) {
+            modelContext.delete(recipe)
+            try? modelContext.save()
         }
     }
 

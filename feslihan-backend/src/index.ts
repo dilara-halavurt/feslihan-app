@@ -753,6 +753,26 @@ app.delete("/folders/:id", async (req, res) => {
   res.status(204).send();
 });
 
+// Delete recipe from user's collection (keeps global recipe)
+app.delete("/users/:userId/recipes/:recipeId", async (req, res) => {
+  const result = await db
+    .delete(userRecipes)
+    .where(
+      and(
+        eq(userRecipes.userId, req.params.userId),
+        eq(userRecipes.recipeId, req.params.recipeId)
+      )
+    )
+    .returning();
+
+  if (result.length === 0) {
+    res.status(404).json({ error: "User recipe not found" });
+    return;
+  }
+
+  res.status(204).send();
+});
+
 // Move recipe to folder (or remove from folder with folder_id: null)
 app.put("/users/:userId/recipes/:recipeId/folder", async (req, res) => {
   const { folder_id } = req.body;
