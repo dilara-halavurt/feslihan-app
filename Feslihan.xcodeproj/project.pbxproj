@@ -10,6 +10,7 @@
 		0F25309DFF76509CC05669EF /* CaptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BC2D60E19F246519FA87D14 /* CaptionService.swift */; };
 		1566ABD22AD559DEF79CDC06 /* AddRecipeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4E1F09C463219453E3EB2A1 /* AddRecipeView.swift */; };
 		16BAE34B9B74D9EAF2DE36C2 /* RecipeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C106C18CA48DECC3172126F /* RecipeDetailView.swift */; };
+		CCDAA0A75D83A62982321774 /* CookingModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19CAECAC469F39AF9EEC221B /* CookingModeView.swift */; };
 		2131670AB7DC32892D6618F0 /* WhatToEatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DBA950AF8742A25F6D2F326 /* WhatToEatView.swift */; };
 		23504B1FF1DC11A623EC73BC /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F992BF94307474C2BFF7C205 /* PaywallView.swift */; };
 		3A7C6E58826E07BEC2FA782D /* MealEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05085FE6F97FB2C1E7E27A3A /* MealEditSheet.swift */; };
@@ -47,6 +48,7 @@
 		1CB25DF3D77ECB2C7BBCC1A7 /* FeslihanError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeslihanError.swift; sourceTree = "<group>"; };
 		1D3CFA3F8D15C8C043FA7380 /* Recipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recipe.swift; sourceTree = "<group>"; };
 		2C106C18CA48DECC3172126F /* RecipeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeDetailView.swift; sourceTree = "<group>"; };
+		19CAECAC469F39AF9EEC221B /* CookingModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CookingModeView.swift; sourceTree = "<group>"; };
 		3794EBFB0A815B05B46B7F87 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		3ECE372FF4A6F953E2416621 /* RecipeListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeListView.swift; sourceTree = "<group>"; };
 		4C775F76984A72AE6DB00F07 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -69,7 +71,7 @@
 		E4E1F09C463219453E3EB2A1 /* AddRecipeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddRecipeView.swift; sourceTree = "<group>"; };
 		E622C26BE09A31D7B090F0E3 /* AudioExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioExtractor.swift; sourceTree = "<group>"; };
 		EA0476CE3A99851992669AF1 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
-		F67A09C9F999DAD1D924581F /* Feslihan.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Feslihan.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F67A09C9F999DAD1D924581F /* Feslihan.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Feslihan.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F992BF94307474C2BFF7C205 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -144,6 +146,7 @@
 				691687B0715514978BE8BBB1 /* ModeSelectionView.swift */,
 				F992BF94307474C2BFF7C205 /* PaywallView.swift */,
 				2C106C18CA48DECC3172126F /* RecipeDetailView.swift */,
+				19CAECAC469F39AF9EEC221B /* CookingModeView.swift */,
 				3ECE372FF4A6F953E2416621 /* RecipeListView.swift */,
 				DDCB2ED1E9EBB185B78FFDCC /* RootView.swift */,
 				1A798F2EB0F1CF7C9232C30E /* SavedMealPlansView.swift */,
@@ -196,8 +199,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = 9EBF3740A292E2B860DFA84A /* Build configuration list for PBXProject "Feslihan" */;
 			developmentRegion = en;
@@ -256,6 +257,7 @@
 				23504B1FF1DC11A623EC73BC /* PaywallView.swift in Sources */,
 				AA759DF2A392EB88E1B9E373 /* Recipe.swift in Sources */,
 				16BAE34B9B74D9EAF2DE36C2 /* RecipeDetailView.swift in Sources */,
+				CCDAA0A75D83A62982321774 /* CookingModeView.swift in Sources */,
 				96D9B5A5FD790789DDE05DE4 /* RecipeListView.swift in Sources */,
 				7CDAAFFF5066F0AC278E13E3 /* RootView.swift in Sources */,
 				6350E98712F1A658086F07D8 /* SavedMealPlansView.swift in Sources */,
@@ -278,6 +280,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = K6N8XQZD5D;
 				INFOPLIST_FILE = Feslihan/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -416,6 +419,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = K6N8XQZD5D;
 				INFOPLIST_FILE = Feslihan/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
