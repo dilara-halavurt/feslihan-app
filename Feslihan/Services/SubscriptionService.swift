@@ -49,7 +49,7 @@ class SubscriptionService: ObservableObject {
 
     func configure() {
         Purchases.configure(
-            with: .builder(withAPIKey: "test_XfGUOHlaPIfQZXFxhbtFOjepXQX")
+            with: .builder(withAPIKey: "appl_GjwqfROjEjlzHCgtNZxwdzawSfT")
                 .build()
         )
     }
