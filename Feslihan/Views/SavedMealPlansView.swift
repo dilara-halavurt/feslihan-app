@@ -473,7 +473,7 @@ private struct SavedPlanDetailSheet: View {
                     )
                 }
 
-                if let userId = await Clerk.shared.user?.id {
+                if let userId = Clerk.shared.user?.id {
                     userRecipes = await APIService.fetchUserRecipes(userId: userId)
                 }
             }

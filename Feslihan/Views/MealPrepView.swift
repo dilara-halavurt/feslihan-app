@@ -1058,7 +1058,7 @@ struct MealPlanResultView: View {
         .task {
             await loadPlan()
             // Fetch user recipes for swapping
-            if let userId = await ClerkKit.Clerk.shared.user?.id {
+            if let userId = ClerkKit.Clerk.shared.user?.id {
                 userRecipes = await APIService.fetchUserRecipes(userId: userId)
             }
         }
@@ -1142,7 +1142,7 @@ struct MealPlanResultView: View {
         guard let plan else { return }
         isSaving = true
         Task {
-            guard let userId = await Clerk.shared.user?.id,
+            guard let userId = Clerk.shared.user?.id,
                   let url = URL(string: "\(APIService.baseURL)/meal-plans") else {
                 isSaving = false
                 return
