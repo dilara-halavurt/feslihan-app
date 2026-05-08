@@ -11,6 +11,7 @@ final class Recipe {
     var thumbnailData: Data?
     var cookingTimeMinutes: Int?
     var cuisine: String?
+    var difficulty: String?
     var tags: [String]
     var likesCount: Int?
     var servings: Int?
@@ -33,6 +34,7 @@ final class Recipe {
         thumbnailData: Data? = nil,
         cookingTimeMinutes: Int? = nil,
         cuisine: String? = nil,
+        difficulty: String? = nil,
         tags: [String] = [],
         likesCount: Int? = nil,
         servings: Int? = nil,
@@ -54,6 +56,7 @@ final class Recipe {
         self.thumbnailData = thumbnailData
         self.cookingTimeMinutes = cookingTimeMinutes
         self.cuisine = cuisine
+        self.difficulty = difficulty
         self.tags = tags
         self.likesCount = likesCount
         self.servings = servings
