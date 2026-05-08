@@ -351,8 +351,7 @@ struct AddRecipeView: View {
                 processingState = .analyzingRecipe
                 let recipe = try await ClaudeService.analyzeRecipe(
                     transcription: "",
-                    caption: captionResult.caption,
-                    coverImage: captionResult.thumbnailData
+                    caption: captionResult.caption
                 )
 
                 var dto = RecipeDTO.from(
@@ -363,6 +362,7 @@ struct AddRecipeView: View {
                     requestedBy: Clerk.shared.user?.id ?? "default",
                     userId: Clerk.shared.user?.id
                 )
+                dto.thumbnail_base64 = captionResult.thumbnailData?.base64EncodedString()
                 // Prefer oEmbed author over Claude's extraction
                 if let author = captionResult.authorName, !author.isEmpty {
                     dto.platform_user = author
