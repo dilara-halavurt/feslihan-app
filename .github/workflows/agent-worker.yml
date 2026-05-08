@@ -46,7 +46,7 @@ jobs:
               -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
               -d '{"workflow_state_id": 500000007, "archived": false}')
 
-            STORY_ID=$(echo "$RESPONSE" | jq -r '.data[0].id // .[0].id // empty')
+            STORY_ID=$(echo "$RESPONSE" | jq -r 'if type == "array" then .[0].id else .data[0].id end // empty')
 
             if [ -z "$STORY_ID" ]; then
               echo "::error::No stories found in To Do column"
