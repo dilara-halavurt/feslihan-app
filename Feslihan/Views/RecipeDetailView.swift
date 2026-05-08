@@ -6,6 +6,7 @@ struct RecipeDetailView: View {
     @State private var profilePicData: Data?
     @State private var servingMultiplier: Double = 1.0
     @State private var recipeCost: RecipeCostDTO?
+    @State private var showCookingMode = false
 
     private let multiplierOptions: [(label: String, value: Double)] = [
         ("1/2x", 0.5), ("1x", 1.0), ("2x", 2.0), ("3x", 3.0), ("4x", 4.0), ("6x", 6.0)
@@ -121,20 +122,36 @@ struct RecipeDetailView: View {
                         macrosView
                     }
 
-                    // Open video button
-                    if recipe.sourceURL != nil {
-                        Button { openVideo() } label: {
+                    // Action buttons
+                    VStack(spacing: 10) {
+                        Button { showCookingMode = true } label: {
                             HStack(spacing: 8) {
-                                Image(systemName: "play.circle.fill")
-                                    .font(.system(size: 18))
-                                Text("Videoyu Aç")
+                                Image(systemName: "flame.fill")
+                                    .font(.system(size: 16))
+                                Text("Pişirmeye Başla")
                                     .font(.system(size: 15, weight: .semibold))
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 48)
                             .foregroundStyle(.white)
-                            .background(DS.ink)
+                            .background(DS.ember)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+
+                        if recipe.sourceURL != nil {
+                            Button { openVideo() } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "play.circle.fill")
+                                        .font(.system(size: 16))
+                                    Text("Videoyu Aç")
+                                        .font(.system(size: 15, weight: .semibold))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 48)
+                                .foregroundStyle(DS.ink)
+                                .background(DS.sand)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
                         }
                     }
                 }
@@ -144,6 +161,12 @@ struct RecipeDetailView: View {
             }
         }
         .ignoresSafeArea(edges: .top)
+        .fullScreenCover(isPresented: $showCookingMode) {
+            CookingModeView(
+                title: recipe.title,
+                steps: CookingStep.parse(from: recipe.instructions)
+            )
+        }
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
