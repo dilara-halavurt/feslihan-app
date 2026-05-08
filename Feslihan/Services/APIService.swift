@@ -332,6 +332,7 @@ extension RecipeDTO {
             thumbnailData: thumbnailData,
             cookingTimeMinutes: cooking_time_minutes,
             cuisine: cuisine,
+            difficulty: difficulty,
             tags: tags ?? [],
             likesCount: likes_count,
             servings: servings,
