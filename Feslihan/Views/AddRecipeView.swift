@@ -337,7 +337,14 @@ struct AddRecipeView: View {
             do {
                 processingState = .analyzingRecipe
                 if let cached = await APIService.lookup(url: trimmedURL) {
+                    // Create user-recipe mapping for existing recipe
+                    var dto = cached
+                    dto.user_id = Clerk.shared.user?.id
+                    _ = await APIService.save(recipe: dto)
+
+                    try await Task.sleep(for: .seconds(Double.random(in: 4...5)))
                     processedRecipe = cached.toProcessedRecipe()
+                    subscription.recordRecipeAdded()
                     processingState = .done
                     return
                 }
