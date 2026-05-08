@@ -372,7 +372,7 @@ struct BubbleGameView: View {
     @State private var queue: [String] = []
     @State private var screenSize: CGSize = .zero
 
-    private let maxOnScreen = 8
+    private let maxOnScreen = 12
 
     var body: some View {
         ZStack {
@@ -556,11 +556,10 @@ struct BubbleGameView: View {
             queue.append(name)
         }
 
-        // Launch next from queue
-        if let next = queue.first {
-            queue.removeFirst()
-            launchBubble(name: next)
-        }
+        // Only launch if under max
+        guard bubbles.count < maxOnScreen, let next = queue.first else { return }
+        queue.removeFirst()
+        launchBubble(name: next)
     }
 
     private func tapBubble(_ bubble: Bubble) {
@@ -580,8 +579,8 @@ struct BubbleGameView: View {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                 removeBubble(bubble)
-                // Launch replacement immediately
-                if let next = queue.first {
+                // Launch replacement if under max
+                if bubbles.count < maxOnScreen, let next = queue.first {
                     queue.removeFirst()
                     launchBubble(name: next)
                 }
