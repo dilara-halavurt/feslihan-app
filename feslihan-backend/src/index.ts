@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import https from "https";
 import { db } from "./db.js";
 import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans } from "./schema.js";
 import { uploadImage, s3KeyFromUrl, getImage } from "./s3.js";
@@ -608,13 +609,20 @@ app.post("/users/sync", async (req, res) => {
   res.json({ ok: true });
 });
 
-// List all known ingredients (with price tier)
+// List all known ingredients (with price tier and price)
 app.get("/ingredients", async (_req, res) => {
   const result = await db
     .select()
     .from(ingredients)
     .orderBy(ingredients.name);
-  res.json(result.map((r) => ({ name: r.name, price_tier: r.priceTier, availability: r.availability })));
+  res.json(result.map((r) => ({
+    name: r.name,
+    price_tier: r.priceTier,
+    availability: r.availability,
+    price_per_unit: r.pricePerUnit,
+    price_unit: r.priceUnit,
+    price_updated_at: r.priceUpdatedAt,
+  })));
 });
 
 // Update price tier for an ingredient
@@ -703,6 +711,197 @@ app.post("/ingredients/classify", async (_req, res) => {
     console.error("[Classify]", err.message || err);
     res.status(500).json({ error: "Classification failed", detail: err.message });
   }
+});
+
+// Fetch real prices from marketfiyati.org.tr for all ingredients
+// Uses https module directly because the TUBITAK SSL cert isn't in Node's trust store
+const marketAgent = new https.Agent({ rejectUnauthorized: false });
+
+function marketFetch(keyword: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ keywords: keyword, pages: 0, size: 10 });
+    const req = https.request(
+      {
+        hostname: "api.marketfiyati.org.tr",
+        path: "/api/v2/search",
+        method: "POST",
+        agent: marketAgent,
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "Origin": "https://marketfiyati.org.tr",
+          "Referer": "https://marketfiyati.org.tr/",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+          "Content-Length": Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+          try { resolve(JSON.parse(data)); } catch { reject(new Error("Invalid JSON")); }
+        });
+      }
+    );
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+async function searchMarketPrice(keyword: string): Promise<{ pricePerUnit: number; priceUnit: string } | null> {
+  try {
+    const data = await marketFetch(keyword);
+    if (!data.content?.length) return null;
+
+    // Find cheapest unit price across all results
+    let bestPrice = Infinity;
+    let bestUnit = "Kg";
+
+    for (const product of data.content) {
+      for (const depot of product.productDepotInfoList ?? []) {
+        if (depot.unitPriceValue && depot.unitPriceValue < bestPrice) {
+          bestPrice = depot.unitPriceValue;
+          // Extract unit from "56,43 ₺/Kg" -> "Kg"
+          const unitMatch = depot.unitPrice?.match(/₺\/(.+)/);
+          bestUnit = unitMatch?.[1] ?? "Kg";
+        }
+      }
+    }
+
+    if (bestPrice === Infinity) return null;
+    return { pricePerUnit: Math.round(bestPrice * 100) / 100, priceUnit: bestUnit };
+  } catch (err: any) {
+    console.log(`    [API] ${keyword}: ${err.message}`);
+    return null;
+  }
+}
+
+app.post("/ingredients/fetch-prices", async (req, res) => {
+  const forceAll = req.query.force === "true";
+  const all = await db.select().from(ingredients).orderBy(ingredients.name);
+  const toFetch = forceAll ? all : all.filter((r) => !r.pricePerUnit);
+
+  if (toFetch.length === 0) {
+    res.json({ updated: 0, failed: 0, total: all.length, message: "All ingredients already have prices" });
+    return;
+  }
+
+  let updated = 0;
+  let failed = 0;
+
+  console.log(`[Prices] Fetching prices for ${toFetch.length}/${all.length} ingredients from marketfiyati.org.tr...`);
+
+  for (const ing of toFetch) {
+    const result = await searchMarketPrice(ing.name);
+    if (result) {
+      await db
+        .update(ingredients)
+        .set({
+          pricePerUnit: result.pricePerUnit,
+          priceUnit: result.priceUnit,
+          priceUpdatedAt: new Date(),
+        })
+        .where(eq(ingredients.id, ing.id));
+      updated++;
+      console.log(`  ${ing.name}: ${result.pricePerUnit} ₺/${result.priceUnit}`);
+    } else {
+      failed++;
+      console.log(`  ${ing.name}: not found`);
+    }
+
+    // Rate limit: delay between requests to avoid 403
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  console.log(`[Prices] Updated ${updated}/${toFetch.length} (${failed} not found)`);
+  res.json({ updated, failed, total: all.length, fetched: toFetch.length });
+});
+
+// Estimate cost of a recipe based on ingredient prices
+app.get("/recipes/:id/cost", async (req, res) => {
+  const recipe = await db
+    .select()
+    .from(recipes)
+    .where(eq(recipes.id, req.params.id))
+    .limit(1);
+
+  if (recipe.length === 0) {
+    res.status(404).json({ error: "Tarif bulunamadı" });
+    return;
+  }
+
+  const ingredientIds = recipe[0].ingredientsWithoutMeasures as string[] | null;
+  const recipeIngsWithMeasures = recipe[0].ingredientsWithMeasures as { name: string; amount: string }[] | null;
+
+  if (!ingredientIds || ingredientIds.length === 0) {
+    res.json({ estimated_cost: null, ingredients: [] });
+    return;
+  }
+
+  // Fetch ingredients by ID (they're UUIDs now)
+  const priced = await db
+    .select()
+    .from(ingredients)
+    .where(inArray(ingredients.id, ingredientIds));
+
+  const priceMap = new Map(priced.map((p) => [p.id, p]));
+  let totalCost = 0;
+  let pricedCount = 0;
+
+  const breakdown = ingredientIds.map((id, i) => {
+    const ing = priceMap.get(id);
+    const measure = recipeIngsWithMeasures?.[i]?.amount ?? null;
+    const name = ing?.name ?? id;
+
+    if (ing?.pricePerUnit) {
+      pricedCount++;
+      const isPerAdet = ing.priceUnit === "Adet";
+      // Estimate quantity in price_unit from measure string
+      let estimatedQty = isPerAdet ? 1 : 0.15; // default: 1 unit or 150g
+      if (measure) {
+        const lower = measure.toLowerCase();
+        // Handle fractions like "1/2", "1/4"
+        let val = 1;
+        const fracMatch = lower.match(/([\d.,]+)\s*\/\s*([\d.,]+)/);
+        const numMatch = lower.match(/([\d.,]+)/);
+        if (fracMatch) {
+          val = parseFloat(fracMatch[1].replace(",", ".")) / parseFloat(fracMatch[2].replace(",", "."));
+        } else if (numMatch) {
+          val = parseFloat(numMatch[1].replace(",", "."));
+        }
+
+        if (lower.includes("kg")) estimatedQty = val;
+        else if (lower.includes("gr") || lower.includes("gram") || /\d+\s*g\b/.test(lower)) estimatedQty = val / 1000;
+        else if (lower.includes("lt") || lower.includes("litre")) estimatedQty = val;
+        else if (lower.includes("ml")) estimatedQty = val / 1000;
+        else if (lower.includes("su bardağı") || lower.includes("su bardagi")) estimatedQty = val * 0.2; // ~200ml
+        else if (lower.includes("çay bardağı")) estimatedQty = val * 0.1;
+        else if (lower.includes("bardak")) estimatedQty = val * 0.2;
+        else if (lower.includes("çay kaşığı") || lower.includes("tatlı kaşığı")) estimatedQty = val * 0.005;
+        else if (lower.includes("yemek kaşığı") || lower.includes("kaşık")) estimatedQty = val * 0.015;
+        else if (lower.includes("tutam") || lower.includes("çimdik")) estimatedQty = val * 0.002;
+        else if (lower.includes("adet") || lower.includes("tane") || lower.includes("diş") || lower.includes("dal") || lower.includes("demet") || lower.includes("dilim")) {
+          estimatedQty = isPerAdet ? val : val * 0.05;
+        } else {
+          estimatedQty = isPerAdet ? val : (val > 10 ? val / 1000 : val * 0.05);
+        }
+      }
+      const cost = Math.round(ing.pricePerUnit * estimatedQty * 100) / 100;
+      totalCost += cost;
+      return { name, measure, price_per_unit: ing.pricePerUnit, price_unit: ing.priceUnit, estimated_qty: estimatedQty, estimated_cost: cost };
+    }
+    return { name, measure, price_per_unit: null, price_unit: null, estimated_qty: null, estimated_cost: null };
+  });
+
+  res.json({
+    estimated_cost: Math.round(totalCost * 100) / 100,
+    currency: "TRY",
+    priced_count: pricedCount,
+    total_count: ingredientIds.length,
+    ingredients: breakdown,
+  });
 });
 
 // Proxy S3 images

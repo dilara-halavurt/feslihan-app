@@ -130,6 +130,9 @@ export const ingredients = pgTable("ingredients", {
   name: varchar("name", { length: 255 }).notNull().unique(),
   priceTier: priceTierEnum("price_tier"),
   availability: availabilityEnum("availability"),
+  pricePerUnit: real("price_per_unit"),
+  priceUnit: varchar("price_unit", { length: 20 }),
+  priceUpdatedAt: timestamp("price_updated_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

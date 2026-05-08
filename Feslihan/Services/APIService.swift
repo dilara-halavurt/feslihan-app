@@ -147,6 +147,14 @@ enum APIService {
         return true
     }
 
+    /// Fetch estimated cost for a recipe.
+    static func fetchRecipeCost(recipeId: String) async -> RecipeCostDTO? {
+        guard let requestURL = URL(string: "\(baseURL)/recipes/\(recipeId)/cost") else { return nil }
+        guard let (data, response) = try? await URLSession.shared.data(from: requestURL),
+              let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+        return try? JSONDecoder().decode(RecipeCostDTO.self, from: data)
+    }
+
     /// Fetch instagram user info including profile picture URL.
     static func fetchCreator(username: String) async -> InstagramUserDTO? {
         guard let requestURL = URL(string: "\(baseURL)/creators/\(username)") else { return nil }
@@ -175,6 +183,9 @@ struct IngredientDTO: Codable, Identifiable {
     let name: String
     let price_tier: String?
     let availability: String?
+    let price_per_unit: Double?
+    let price_unit: String?
+    let price_updated_at: String?
 
     var priceTierEmoji: String? {
         switch price_tier {
@@ -183,6 +194,11 @@ struct IngredientDTO: Codable, Identifiable {
         case "expensive": return "₺₺₺"
         default: return nil
         }
+    }
+
+    var formattedPrice: String? {
+        guard let price = price_per_unit, let unit = price_unit else { return nil }
+        return String(format: "%.2f ₺/%@", price, unit)
     }
 
     var availabilityIcon: String? {
@@ -198,6 +214,23 @@ struct IngredientDTO: Codable, Identifiable {
 struct InstagramUserDTO: Codable {
     let username: String
     let profile_picture_url: String?
+}
+
+struct RecipeCostDTO: Codable {
+    let estimated_cost: Double?
+    let currency: String?
+    let priced_count: Int
+    let total_count: Int
+    let ingredients: [IngredientCostDTO]
+}
+
+struct IngredientCostDTO: Codable {
+    let name: String
+    let measure: String?
+    let price_per_unit: Double?
+    let price_unit: String?
+    let estimated_qty: Double?
+    let estimated_cost: Double?
 }
 
 /// DTO matching the backend API shape.
