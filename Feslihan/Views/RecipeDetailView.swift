@@ -7,6 +7,9 @@ struct RecipeDetailView: View {
     @State private var servingMultiplier: Double = 1.0
     @State private var recipeCost: RecipeCostDTO?
     @State private var showCookingMode = false
+    @State private var showCost = false
+    @State private var isLoadingCost = false
+    @State private var backendRecipeId: String?
 
     private let multiplierOptions: [(label: String, value: Double)] = [
         ("1/2x", 0.5), ("1x", 1.0), ("2x", 2.0), ("3x", 3.0), ("4x", 4.0), ("6x", 6.0)
@@ -95,9 +98,6 @@ struct RecipeDetailView: View {
                                 Label(cuisine.capitalized, systemImage: "globe")
                             }
                             Label("\(recipe.ingredients.count)", systemImage: "leaf")
-                            if let cost = recipeCost?.estimated_cost, cost > 0 {
-                                Label(formatCost(cost * servingMultiplier), systemImage: "turkishlirasign")
-                            }
                         }
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(DS.smoke)
@@ -177,7 +177,6 @@ struct RecipeDetailView: View {
         .task {
             // Fetch fresh recipe data from backend
             print("[Detail] sourceURL: \(recipe.sourceURL ?? "nil")")
-            var backendId: String?
             if let rawURL = recipe.sourceURL,
                let dto = await APIService.lookup(url: cleanURL(rawURL)) {
                 print("[Detail] Got nutrition: cal=\(dto.calories_total_kcal ?? -1), user=\(dto.platform_user ?? "nil")")
@@ -194,12 +193,7 @@ struct RecipeDetailView: View {
                 recipe.cookingTimeMinutes = dto.cooking_time_minutes
                 recipe.likesCount = dto.likes_count
                 recipe.tags = dto.tags ?? []
-                backendId = dto.id
-            }
-
-            // Fetch recipe cost
-            if let recipeId = backendId {
-                recipeCost = await APIService.fetchRecipeCost(recipeId: recipeId)
+                backendRecipeId = dto.id
             }
 
             // Fetch profile picture
@@ -224,10 +218,83 @@ struct RecipeDetailView: View {
     }
 
     private func formatCost(_ cost: Double) -> String {
-        if cost >= 1000 {
-            return String(format: "%.0f ₺", cost)
+        String(format: "%.0f ₺", cost)
+    }
+
+    private func fetchCost() {
+        guard let recipeId = backendRecipeId, recipeCost == nil else { return }
+        isLoadingCost = true
+        Task {
+            recipeCost = await APIService.fetchRecipeCost(recipeId: recipeId)
+            withAnimation(.easeInOut(duration: 0.5)) {
+                showCost = true
+            }
+            isLoadingCost = false
         }
-        return String(format: "%.0f ₺", cost)
+    }
+
+    private var costFlipCard: some View {
+        Button {
+            if recipeCost != nil {
+                withAnimation(.easeInOut(duration: 0.5)) {
+                    showCost.toggle()
+                }
+            } else {
+                fetchCost()
+            }
+        } label: {
+            ZStack {
+                // Front: prompt to reveal
+                HStack(spacing: 10) {
+                    Image(systemName: "turkishlirasign.circle")
+                        .font(.system(size: 22))
+                        .foregroundStyle(DS.ember)
+                    Text("Tahmini maliyeti gör")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(DS.ember)
+                    Spacer()
+                    if isLoadingCost {
+                        ProgressView()
+                            .tint(DS.ember)
+                    } else {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(DS.ember)
+                    }
+                }
+                .padding(14)
+                .opacity(showCost ? 0 : 1)
+
+                // Back: cost revealed
+                if let cost = recipeCost?.estimated_cost, cost > 0 {
+                    HStack(spacing: 10) {
+                        Image(systemName: "turkishlirasign.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(DS.ember)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Tahmini Maliyet")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(DS.smoke)
+                            Text(formatCost(cost * servingMultiplier))
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .foregroundStyle(DS.ink)
+                        }
+                        Spacer()
+                        if let total = recipeCost?.total_count,
+                           let priced = recipeCost?.priced_count, priced < total {
+                            Text("\(priced)/\(total)")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(DS.dust)
+                        }
+                    }
+                    .padding(14)
+                    .opacity(showCost ? 1 : 0)
+                }
+            }
+            .background(DS.emberLight.opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
     }
 
     private func cleanURL(_ urlString: String) -> String {
@@ -300,31 +367,9 @@ struct RecipeDetailView: View {
                 }
             }
 
-            // Estimated cost card
-            if let cost = recipeCost?.estimated_cost, cost > 0 {
-                let scaledCost = cost * servingMultiplier
-                HStack(spacing: 12) {
-                    Image(systemName: "turkishlirasign.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(DS.ember)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Tahmini Maliyet")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(DS.smoke)
-                        Text(formatCost(scaledCost))
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                            .foregroundStyle(DS.ink)
-                    }
-                    Spacer()
-                    if let total = recipeCost?.total_count, let priced = recipeCost?.priced_count, priced < total {
-                        Text("\(priced)/\(total) malzeme")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(DS.dust)
-                    }
-                }
-                .padding(16)
-                .background(DS.emberLight.opacity(0.5))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+            // Estimated cost flip card
+            if backendRecipeId != nil {
+                costFlipCard
             }
 
             // Scaled ingredients list

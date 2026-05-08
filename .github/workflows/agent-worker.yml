@@ -1,0 +1,193 @@
+name: Agent Worker
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # 10:00 AM Turkey time (UTC+3)
+
+  workflow_dispatch:
+    inputs:
+      story_id:
+        description: "Shortcut story ID (leave empty to auto-pick from To Do)"
+        required: false
+        type: string
+
+  repository_dispatch:
+    types: [shortcut-story]
+
+jobs:
+  agent-work:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Get Shortcut story
+        id: story
+        env:
+          SHORTCUT_API_TOKEN: ${{ secrets.SHORTCUT_API_TOKEN }}
+          INPUT_STORY_ID: ${{ github.event.inputs.story_id || github.event.client_payload.story_id || '' }}
+        run: |
+          set -e
+
+          if [ -z "$INPUT_STORY_ID" ]; then
+            echo "No story ID provided, fetching first story from To Do..."
+            RESPONSE=$(curl -s -X POST "https://api.app.shortcut.com/api/v3/stories/search" \
+              -H "Content-Type: application/json" \
+              -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
+              -d '{"workflow_state_id": 500000007, "archived": false}')
+
+            STORY_ID=$(echo "$RESPONSE" | jq -r 'if type == "array" then .[0].id else .data[0].id end // empty')
+
+            if [ -z "$STORY_ID" ]; then
+              echo "::error::No stories found in To Do column"
+              exit 1
+            fi
+          else
+            STORY_ID="$INPUT_STORY_ID"
+          fi
+
+          echo "Fetching story $STORY_ID..."
+          STORY=$(curl -s "https://api.app.shortcut.com/api/v3/stories/$STORY_ID" \
+            -H "Shortcut-Token: $SHORTCUT_API_TOKEN")
+
+          STORY_NAME=$(echo "$STORY" | jq -r '.name')
+          STORY_DESC=$(echo "$STORY" | jq -r '.description // ""')
+          STORY_LABELS=$(echo "$STORY" | jq -r '[.labels[].name] | join(", ")')
+          STORY_TASKS=$(echo "$STORY" | jq -r '.tasks[] | "- [ ] \(.description)"')
+
+          # Create branch name from story
+          BRANCH_SLUG=$(echo "$STORY_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | head -c 50 | sed 's/-$//')
+          BRANCH="sc-${STORY_ID}/${BRANCH_SLUG}"
+
+          echo "id=$STORY_ID" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+          # Save multiline content to files (avoids shell escaping issues)
+          echo "$STORY_NAME" > /tmp/story_name.txt
+          echo "$STORY_DESC" > /tmp/story_desc.txt
+          echo "$STORY_TASKS" > /tmp/story_tasks.txt
+          echo "$STORY_LABELS" > /tmp/story_labels.txt
+
+      - name: Move story to In Progress
+        env:
+          SHORTCUT_API_TOKEN: ${{ secrets.SHORTCUT_API_TOKEN }}
+        run: |
+          curl -s -X PUT "https://api.app.shortcut.com/api/v3/stories/${{ steps.story.outputs.id }}" \
+            -H "Content-Type: application/json" \
+            -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
+            -d '{"workflow_state_id": 500000008}'
+
+      - name: Create branch
+        run: git checkout -b "${{ steps.story.outputs.branch }}"
+
+      - name: Run Claude Code
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          STORY_NAME=$(cat /tmp/story_name.txt)
+          STORY_DESC=$(cat /tmp/story_desc.txt)
+          STORY_TASKS=$(cat /tmp/story_tasks.txt)
+
+          PROMPT=$(cat <<'PROMPT_END'
+          You are an autonomous coding agent working on the Feslihan app.
+          Implement the following Shortcut story. Read relevant files first to understand the codebase, then make focused changes.
+
+          PROMPT_END
+          )
+
+          PROMPT="${PROMPT}
+          Story: ${STORY_NAME}
+          Description: ${STORY_DESC}
+          Tasks: ${STORY_TASKS}
+
+          Requirements:
+          - Only make changes directly related to this story
+          - Follow existing code patterns and conventions
+          - Keep changes minimal and focused
+          - If this is a backend change, ensure it compiles with 'npx tsc --noEmit'
+          - If this is an iOS change, only modify Swift files"
+
+          npx -y @anthropic-ai/claude-code -p "$PROMPT" \
+            --dangerously-skip-permissions \
+            --max-turns 50 || true
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Claude made no changes"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          STORY_NAME=$(cat /tmp/story_name.txt)
+          git config user.name "Claude Agent"
+          git config user.email "claude-agent@users.noreply.github.com"
+          git add -A
+          git commit -m "$(cat <<EOF
+          feat: ${STORY_NAME}
+
+          Implements sc-${{ steps.story.outputs.id }}
+
+          Co-Authored-By: Claude <noreply@anthropic.com>
+          EOF
+          )"
+          git push -u origin "${{ steps.story.outputs.branch }}"
+
+      - name: Create PR
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          STORY_NAME=$(cat /tmp/story_name.txt)
+          STORY_DESC=$(cat /tmp/story_desc.txt)
+          STORY_ID="${{ steps.story.outputs.id }}"
+
+          gh pr create \
+            --title "feat: ${STORY_NAME}" \
+            --body "$(cat <<EOF
+          ## Shortcut Story
+          [sc-${STORY_ID}](https://app.shortcut.com/story/${STORY_ID})
+
+          ## Description
+          ${STORY_DESC}
+
+          ---
+          Implemented autonomously by Claude Agent
+          EOF
+          )" \
+            --base main
+
+      - name: Move story to In Review
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          SHORTCUT_API_TOKEN: ${{ secrets.SHORTCUT_API_TOKEN }}
+        run: |
+          curl -s -X PUT "https://api.app.shortcut.com/api/v3/stories/${{ steps.story.outputs.id }}" \
+            -H "Content-Type: application/json" \
+            -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
+            -d '{"workflow_state_id": 500000009}'
+
+      - name: Move story back to To Do on failure
+        if: failure()
+        env:
+          SHORTCUT_API_TOKEN: ${{ secrets.SHORTCUT_API_TOKEN }}
+        run: |
+          curl -s -X PUT "https://api.app.shortcut.com/api/v3/stories/${{ steps.story.outputs.id }}" \
+            -H "Content-Type: application/json" \
+            -H "Shortcut-Token: $SHORTCUT_API_TOKEN" \
+            -d '{"workflow_state_id": 500000007}'
