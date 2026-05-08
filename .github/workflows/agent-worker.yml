@@ -119,7 +119,7 @@ jobs:
 
           npx -y @anthropic-ai/claude-code -p "$PROMPT" \
             --dangerously-skip-permissions \
-            --max-turns 30
+            --max-turns 50 || true
 
       - name: Check for changes
         id: changes
