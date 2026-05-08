@@ -70,10 +70,11 @@ enum ClaudeService {
 
         let thumbnail = coverImage
 
+        let baseIngs = recipeJSON.baseIngredients ?? []
         return ProcessedRecipe(
             title: recipeJSON.title ?? "",
-            ingredients: (recipeJSON.ingredients ?? []).map { ing in
-                Ingredient(name: ing.name, amount: ing.amount)
+            ingredients: (recipeJSON.ingredients ?? []).enumerated().map { index, ing in
+                Ingredient(name: ing.name, amount: ing.amount, baseName: index < baseIngs.count ? baseIngs[index] : nil)
             },
             instructions: recipeJSON.instructions ?? "",
             cookingTimeMinutes: recipeJSON.cookingTimeMinutes,

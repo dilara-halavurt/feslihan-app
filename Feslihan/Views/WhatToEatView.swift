@@ -498,7 +498,7 @@ struct BubbleGameView: View {
         .task {
             let fetched = await APIService.fetchIngredients()
             let all = fetched.isEmpty ? fallbackIngredients : fetched.map { fixTurkishCharacters($0.name) }
-            ingredientNames = Array(all.shuffled().prefix(35))
+            ingredientNames = all.sorted()
             isLoading = false
         }
     }

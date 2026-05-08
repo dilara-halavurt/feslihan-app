@@ -283,10 +283,11 @@ extension RecipeDTO {
 
     /// Convert DTO to local SwiftData Recipe. Call from async context.
     func toRecipe(thumbnailData: Data? = nil) -> Recipe {
-        let ingredients = ingredients_with_measures.map { item in
+        let ingredients = ingredients_with_measures.enumerated().map { index, item in
             Ingredient(
                 name: item["name"] ?? "",
-                amount: item["amount"] ?? ""
+                amount: item["amount"] ?? "",
+                baseName: index < ingredients_without_measures.count ? ingredients_without_measures[index] : nil
             )
         }
 
@@ -315,10 +316,11 @@ extension RecipeDTO {
 
     /// Convert DTO from backend to ProcessedRecipe for the UI.
     func toProcessedRecipe() -> ProcessedRecipe {
-        let ingredients = ingredients_with_measures.map { item in
+        let ingredients = ingredients_with_measures.enumerated().map { index, item in
             Ingredient(
                 name: item["name"] ?? "",
-                amount: item["amount"] ?? ""
+                amount: item["amount"] ?? "",
+                baseName: index < ingredients_without_measures.count ? ingredients_without_measures[index] : nil
             )
         }
 

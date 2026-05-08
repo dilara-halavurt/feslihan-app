@@ -33,13 +33,13 @@ struct IngredientsView: View {
 
                     Spacer()
 
-                    if let icon = availabilityIcons[ingredient.name.lowercased()] {
+                    if let icon = availabilityIcons[(ingredient.baseName ?? ingredient.name).lowercased()] {
                         Image(systemName: icon)
                             .font(.system(size: 13))
                             .foregroundStyle(availabilityColor(icon))
                     }
 
-                    if let tier = priceTiers[ingredient.name.lowercased()] {
+                    if let tier = priceTiers[(ingredient.baseName ?? ingredient.name).lowercased()] {
                         Text(tier)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(priceTierColor(tier))

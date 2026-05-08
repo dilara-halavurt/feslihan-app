@@ -219,27 +219,88 @@ function fixTurkish(name: string): string {
   return turkishFixMap[lower] ?? lower;
 }
 
-async function registerIngredients(names: string[]) {
-  if (!names || names.length === 0) return;
+async function resolveIngredientIds(names: string[]): Promise<string[]> {
+  if (!names || names.length === 0) return [];
 
-  const normalized = [...new Set(names.map((n) => fixTurkish(n)).filter(Boolean))];
-  if (normalized.length === 0) return;
+  const normalized = names.map((n) => fixTurkish(n)).filter(Boolean);
+  if (normalized.length === 0) return [];
 
+  // Register any new ingredients
+  const unique = [...new Set(normalized)];
   const existing = await db
-    .select({ name: ingredients.name })
+    .select({ id: ingredients.id, name: ingredients.name })
     .from(ingredients)
-    .where(inArray(ingredients.name, normalized));
+    .where(inArray(ingredients.name, unique));
 
-  const existingNames = new Set(existing.map((r) => r.name));
-  const newNames = normalized.filter((n) => !existingNames.has(n));
+  const nameToId = new Map(existing.map((r) => [r.name, r.id]));
+  const newNames = unique.filter((n) => !nameToId.has(n));
 
   if (newNames.length > 0) {
-    await db
+    const inserted = await db
       .insert(ingredients)
       .values(newNames.map((name) => ({ name })))
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning();
+    for (const row of inserted) {
+      nameToId.set(row.name, row.id);
+    }
     console.log(`Registered ${newNames.length} new ingredient(s): ${newNames.join(", ")}`);
   }
+
+  return normalized.map((n) => nameToId.get(n)).filter(Boolean) as string[];
+}
+
+async function resolveIngredientNames(ids: string[]): Promise<string[]> {
+  if (!ids || ids.length === 0) return [];
+  // Filter out any non-UUID values (legacy string names)
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const validIds = ids.filter((id) => uuidPattern.test(id));
+  if (validIds.length === 0) return ids; // already names, return as-is
+
+  const rows = await db
+    .select({ id: ingredients.id, name: ingredients.name })
+    .from(ingredients)
+    .where(inArray(ingredients.id, validIds));
+
+  const idToName = new Map(rows.map((r) => [r.id, r.name]));
+  return ids.map((id) => idToName.get(id) ?? id);
+}
+
+async function enrichRecipe(recipe: any): Promise<any> {
+  const obj = rewriteThumbnail(toSnake(recipe));
+  if (obj.ingredients_without_measures && Array.isArray(obj.ingredients_without_measures)) {
+    obj.ingredients_without_measures = await resolveIngredientNames(obj.ingredients_without_measures);
+  }
+  return obj;
+}
+
+async function enrichRecipes(recipes: any[]): Promise<any[]> {
+  // Batch resolve all IDs at once for efficiency
+  const allIds = new Set<string>();
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  for (const r of recipes) {
+    const ings = (r.ingredientsWithoutMeasures ?? r.ingredients_without_measures) as string[] | null;
+    if (ings) ings.filter((id: string) => uuidPattern.test(id)).forEach((id: string) => allIds.add(id));
+  }
+
+  let idToName = new Map<string, string>();
+  if (allIds.size > 0) {
+    const rows = await db
+      .select({ id: ingredients.id, name: ingredients.name })
+      .from(ingredients)
+      .where(inArray(ingredients.id, [...allIds]));
+    idToName = new Map(rows.map((r) => [r.id, r.name]));
+  }
+
+  return recipes.map((r) => {
+    const obj = rewriteThumbnail(toSnake(r));
+    if (obj.ingredients_without_measures && Array.isArray(obj.ingredients_without_measures)) {
+      obj.ingredients_without_measures = obj.ingredients_without_measures.map(
+        (id: string) => idToName.get(id) ?? id
+      );
+    }
+    return obj;
+  });
 }
 
 async function ensureCreator(username: string | null | undefined, platform: "instagram" | "tiktok" | "x" | "other") {
@@ -328,7 +389,7 @@ app.get("/recipes/lookup", async (req, res) => {
     return;
   }
 
-  res.json(rewriteThumbnail(toSnake(result[0])));
+  res.json(await enrichRecipe(result[0]));
 });
 
 // Save a new recipe
@@ -353,7 +414,7 @@ app.post("/recipes", async (req, res) => {
     } else {
       console.log(`  -> Already exists, returning cached`);
     }
-    res.json(rewriteThumbnail(toSnake(existing[0])));
+    res.json(await enrichRecipe(existing[0]));
     return;
   }
 
@@ -387,7 +448,7 @@ app.post("/recipes", async (req, res) => {
       title: data.title,
       description: data.description,
       ingredientsWithMeasures: data.ingredients_with_measures ?? [],
-      ingredientsWithoutMeasures: (data.ingredients_without_measures ?? []).map((n: string) => fixTurkish(n)),
+      ingredientsWithoutMeasures: await resolveIngredientIds(data.ingredients_without_measures ?? []),
       thumbnailUrl,
       servings: data.servings,
       caloriesTotalKcal: data.calories_total_kcal,
@@ -405,9 +466,6 @@ app.post("/recipes", async (req, res) => {
       requestedBy: data.requested_by,
     })
     .returning();
-
-  // Register any new base ingredients
-  await registerIngredients(data.ingredients_without_measures ?? []);
 
   // Add user-recipe mapping
   if (data.user_id) {
@@ -439,7 +497,7 @@ app.get("/recipes", async (req, res) => {
     ? await query.where(conditions[0]).orderBy(desc(recipes.createdAt))
     : await query.orderBy(desc(recipes.createdAt));
 
-  res.json(rewriteThumbnail(toSnake(result)));
+  res.json(await enrichRecipes(result));
 });
 
 // Get recipes for a user (includes folder info)
@@ -471,7 +529,7 @@ app.get("/users/:userId/recipes", async (req, res) => {
     folderId: folderMap.get(r.id) ?? null,
   }));
 
-  res.json(rewriteThumbnail(toSnake(enriched)));
+  res.json(await enrichRecipes(enriched));
 });
 
 // Get single recipe
@@ -487,7 +545,7 @@ app.get("/recipes/:id", async (req, res) => {
     return;
   }
 
-  res.json(rewriteThumbnail(toSnake(result[0])));
+  res.json(await enrichRecipe(result[0]));
 });
 
 // Backfill missing metadata from captions
@@ -509,11 +567,12 @@ app.post("/recipes/backfill", async (_req, res) => {
     }
   }
 
-  // Also register ingredients from existing recipes
+  // Also resolve ingredient IDs from existing recipes
   for (const recipe of all) {
     const ings = recipe.ingredientsWithoutMeasures as string[] | null;
     if (ings && ings.length > 0) {
-      await registerIngredients(ings);
+      const ids = await resolveIngredientIds(ings);
+      await db.update(recipes).set({ ingredientsWithoutMeasures: ids }).where(eq(recipes.id, recipe.id));
     }
   }
 
@@ -702,20 +761,22 @@ app.post("/recipes/fix-turkish", async (_req, res) => {
     }
   }
 
-  // 2. Fix ingredients_without_measures in recipes
+  // 2. Re-resolve ingredient IDs in recipes (in case names changed)
   const allRecipes = await db.select().from(recipes);
   let recipeFixed = 0;
   for (const recipe of allRecipes) {
     const ings = recipe.ingredientsWithoutMeasures as string[] | null;
     if (!ings || ings.length === 0) continue;
 
-    const fixedIngs = ings.map((n: string) => fixTurkish(n));
-    const changed = fixedIngs.some((f: string, i: number) => f !== ings[i]);
+    // Skip if already UUIDs
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
+    if (ings[0] && uuidPattern.test(ings[0])) continue;
 
-    if (changed) {
+    const ids = await resolveIngredientIds(ings);
+    if (ids.length > 0) {
       await db
         .update(recipes)
-        .set({ ingredientsWithoutMeasures: fixedIngs })
+        .set({ ingredientsWithoutMeasures: ids })
         .where(eq(recipes.id, recipe.id));
       recipeFixed++;
     }
@@ -974,12 +1035,13 @@ app.post("/ai/meal-plan", async (req, res) => {
           .from(recipes)
           .where(inArray(recipes.id, recipeIds));
 
-        availableRecipes = userRecipeRows.map((r) => ({
+        const resolvedRecipes = await enrichRecipes(userRecipeRows);
+        availableRecipes = resolvedRecipes.map((r: any) => ({
           title: r.title,
           tags: r.tags as string[],
-          cooking_time_minutes: r.cookingTimeMinutes ?? 30,
+          cooking_time_minutes: r.cooking_time_minutes ?? 30,
           cuisine: r.cuisine,
-          ingredients: (r.ingredientsWithoutMeasures as string[]) || [],
+          ingredients: r.ingredients_without_measures || [],
         }));
       }
     }

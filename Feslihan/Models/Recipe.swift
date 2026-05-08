@@ -74,4 +74,5 @@ struct Ingredient: Codable, Identifiable, Hashable {
     var id: UUID = UUID()
     var name: String
     var amount: String
+    var baseName: String?
 }
