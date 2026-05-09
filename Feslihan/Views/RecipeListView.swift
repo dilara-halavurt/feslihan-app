@@ -18,6 +18,11 @@ struct RecipeListView: View {
     @State private var filters = RecipeFilters()
     @State private var showFilterSheet = false
     @State private var ingredientPriceTiers: [String: String] = [:]
+    @AppStorage("recipeSortOption") private var sortOptionRaw = RecipeSortOption.newest.rawValue
+
+    private var sortOption: RecipeSortOption {
+        RecipeSortOption(rawValue: sortOptionRaw) ?? .newest
+    }
 
     private var filtered: [Recipe] {
         var base: [Recipe]
@@ -32,7 +37,24 @@ struct RecipeListView: View {
         if filters.isActive {
             base = base.filter { matchesFilters($0) }
         }
-        return base
+        return sorted(base)
+    }
+
+    private func sorted(_ recipes: [Recipe]) -> [Recipe] {
+        switch sortOption {
+        case .newest:
+            return recipes.sorted { $0.createdAt > $1.createdAt }
+        case .alphabetical:
+            return recipes.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        case .cookingTime:
+            return recipes.sorted {
+                ($0.cookingTimeMinutes ?? Int.max) < ($1.cookingTimeMinutes ?? Int.max)
+            }
+        case .calories:
+            return recipes.sorted {
+                ($0.caloriesPerServingKcal ?? .greatestFiniteMagnitude) < ($1.caloriesPerServingKcal ?? .greatestFiniteMagnitude)
+            }
+        }
     }
 
     private func matchesFilters(_ recipe: Recipe) -> Bool {
@@ -313,6 +335,20 @@ struct RecipeListView: View {
                     }
                 }
                 if !recipes.isEmpty {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Menu {
+                            Picker("Sırala", selection: $sortOptionRaw) {
+                                ForEach(RecipeSortOption.allCases) { option in
+                                    Label(option.label, systemImage: option.icon)
+                                        .tag(option.rawValue)
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down.circle")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundStyle(DS.ink)
+                        }
+                    }
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button {
                             showFilterSheet = true
@@ -646,6 +682,35 @@ private struct RecipeCard: View {
             return String(format: "%.1fK", Double(count) / 1_000)
         }
         return "\(count)"
+    }
+}
+
+// MARK: - Sort
+
+enum RecipeSortOption: String, CaseIterable, Identifiable {
+    case newest
+    case alphabetical
+    case cookingTime
+    case calories
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .newest: return "En Yeni"
+        case .alphabetical: return "Alfabetik (A-Z)"
+        case .cookingTime: return "Pişirme Süresi"
+        case .calories: return "Kalori"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .newest: return "clock.arrow.circlepath"
+        case .alphabetical: return "textformat"
+        case .cookingTime: return "timer"
+        case .calories: return "flame"
+        }
     }
 }
 
