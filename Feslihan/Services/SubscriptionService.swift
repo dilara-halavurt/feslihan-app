@@ -60,8 +60,14 @@ class SubscriptionService: ObservableObject {
 
     func refreshStatus() async {
         // TODO: Remove this when RevenueCat products are live
+        // Skip RevenueCat check until products are configured
+        // (DEBUG = Xcode, TestFlight = no App Store receipt)
         #if DEBUG
         return
+        #else
+        if Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" {
+            return
+        }
         #endif
         do {
             let info = try await Purchases.shared.customerInfo()
