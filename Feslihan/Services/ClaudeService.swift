@@ -21,6 +21,7 @@ struct ProcessedRecipe {
     let platformUser: String?
     let likesCount: Int?
     let commentsCount: Int?
+    let freezerFriendly: Bool
 }
 
 enum ClaudeService {
@@ -92,7 +93,8 @@ enum ClaudeService {
             tags: recipeJSON.tags ?? [],
             platformUser: recipeJSON.platformUser,
             likesCount: recipeJSON.likesCount,
-            commentsCount: recipeJSON.commentsCount
+            commentsCount: recipeJSON.commentsCount,
+            freezerFriendly: recipeJSON.freezerFriendly ?? false
         )
     }
 
@@ -231,6 +233,7 @@ private struct RecipeJSON: Decodable {
     let likesCount: Int?
     let commentsCount: Int?
     let cookingTimeMinutes: Int?
+    let freezerFriendly: Bool?
 
     enum CodingKeys: String, CodingKey {
         case title, ingredients, instructions, servings, cuisine, tags
@@ -248,6 +251,7 @@ private struct RecipeJSON: Decodable {
         case generatedThumbnail = "generated_thumbnail"
         case bestThumbnailIndex = "best_thumbnail_index"
         case platformUser = "platform_user"
+        case freezerFriendly = "freezer_friendly"
         case likesCount = "likes_count"
         case commentsCount = "comments_count"
     }

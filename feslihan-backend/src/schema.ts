@@ -8,6 +8,7 @@ import {
   jsonb,
   timestamp,
   pgEnum,
+  boolean,
 } from "drizzle-orm/pg-core";
 
 export const subscriptionPlanEnum = pgEnum("subscription_plan", [
@@ -112,6 +113,7 @@ export const recipes = pgTable("recipes", {
   cookingTimeMinutes: integer("cooking_time_minutes").notNull(),
   cuisine: varchar("cuisine", { length: 50 }),
   difficulty: difficultyEnum("difficulty"),
+  freezerFriendly: boolean("freezer_friendly").notNull().default(false),
   healthScore: real("health_score"),
 
   // Tracking

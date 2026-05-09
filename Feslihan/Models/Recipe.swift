@@ -24,6 +24,7 @@ final class Recipe {
     var platformUser: String?
     var platform: String?
     var folderId: String?
+    var freezerFriendly: Bool
     var createdAt: Date
 
     init(
@@ -46,7 +47,8 @@ final class Recipe {
         fiberGrams: Double? = nil,
         platformUser: String? = nil,
         platform: String? = nil,
-        folderId: String? = nil
+        folderId: String? = nil,
+        freezerFriendly: Bool = false
     ) {
         self.id = UUID()
         self.title = title
@@ -69,6 +71,7 @@ final class Recipe {
         self.platformUser = platformUser
         self.platform = platform
         self.folderId = folderId
+        self.freezerFriendly = freezerFriendly
         self.createdAt = Date()
     }
 }

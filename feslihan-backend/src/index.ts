@@ -4,7 +4,7 @@ import https from "https";
 import { db } from "./db.js";
 import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans } from "./schema.js";
 import { uploadImage, s3KeyFromUrl, getImage } from "./s3.js";
-import { analyzeRecipe, generateMealPlan, classifyIngredients } from "./ai.js";
+import { analyzeRecipe, generateMealPlan, classifyIngredients, classifyFreezerFriendly } from "./ai.js";
 import { eq, desc, inArray, and } from "drizzle-orm";
 
 const app = express();
@@ -463,6 +463,7 @@ app.post("/recipes", async (req, res) => {
       cookingTimeMinutes: data.cooking_time_minutes ?? parseCookingTime(data.cooking_time) ?? 30,
       cuisine: data.cuisine,
       difficulty: data.difficulty,
+      freezerFriendly: data.freezer_friendly ?? false,
       healthScore: data.health_score,
       requestedBy: data.requested_by,
     })
@@ -578,6 +579,51 @@ app.post("/recipes/backfill", async (_req, res) => {
   }
 
   res.json({ backfilled: updated, total: all.length });
+});
+
+// Backfill freezer_friendly for existing recipes using AI
+app.post("/recipes/backfill-freezer", async (_req, res) => {
+  const all = await db.select().from(recipes);
+  const enriched = await enrichRecipes(all);
+
+  const toClassify = enriched.map((r: any) => ({
+    id: r.id,
+    title: r.title,
+    tags: (r.tags as string[]) || [],
+    ingredients: (r.ingredients_without_measures as string[]) || [],
+  }));
+
+  if (toClassify.length === 0) {
+    res.json({ updated: 0, total: 0 });
+    return;
+  }
+
+  console.log(`[Freezer] Classifying ${toClassify.length} recipes...`);
+
+  try {
+    // Process in batches of 20
+    let updated = 0;
+    for (let i = 0; i < toClassify.length; i += 20) {
+      const batch = toClassify.slice(i, i + 20);
+      const results = await classifyFreezerFriendly(batch);
+
+      for (const item of results) {
+        await db
+          .update(recipes)
+          .set({ freezerFriendly: item.freezer_friendly })
+          .where(eq(recipes.id, item.id));
+        updated++;
+      }
+
+      console.log(`[Freezer] Batch ${Math.floor(i / 20) + 1}: ${results.length} classified`);
+    }
+
+    console.log(`[Freezer] Updated ${updated}/${toClassify.length} recipes`);
+    res.json({ updated, total: toClassify.length });
+  } catch (err: any) {
+    console.error("[Freezer]", err.message || err);
+    res.status(500).json({ error: "Freezer classification failed", detail: err.message });
+  }
 });
 
 // Sync Clerk user to local DB
@@ -1247,6 +1293,7 @@ app.post("/ai/meal-plan", async (req, res) => {
           cooking_time_minutes: r.cooking_time_minutes ?? 30,
           cuisine: r.cuisine,
           ingredients: r.ingredients_without_measures || [],
+          freezer_friendly: r.freezer_friendly ?? false,
         }));
       }
     }

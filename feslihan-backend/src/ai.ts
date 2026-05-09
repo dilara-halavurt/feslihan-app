@@ -27,7 +27,7 @@ interface MealPlanRequest {
   kids_count: number;
   prep_style: string;
   budget: string;
-  available_recipes?: { title: string; tags: string[]; cooking_time_minutes?: number; cuisine?: string; ingredients: string[] }[];
+  available_recipes?: { title: string; tags: string[]; cooking_time_minutes?: number; cuisine?: string; ingredients: string[]; freezer_friendly?: boolean }[];
 }
 
 export async function analyzeRecipe(input: AnalyzeRequest) {
@@ -86,6 +86,7 @@ Eger icerik bir yemek tarifi ISE, asagidaki JSON formatinda yanit ver (baska hic
     "fiber_grams": 8.0,
     "difficulty": "medium",
     "cuisine": "turkish",
+    "freezer_friendly": true,
     "tags": ["tatli", "misafirler icin"],
     "best_thumbnail_index": 0,
     "platform_user": "videodaki kullanici adi (caption'dan cikart, @ isareti olmadan)",
@@ -108,6 +109,7 @@ Onemli kurallar:
 - cooking_time_minutes: Tahmini toplam pisirme suresi DAKIKA cinsinden (sayi olarak). Ornegin: 15 dk ise 15, 1.5 saat ise 90, 2 saat ise 120. ASLA null olmamali.
 - difficulty: Tarifin zorluk seviyesi - "low" (kolay/az islem), "medium" (orta), "high" (zor/cok islem)
 - servings: Tarifin kac kisilik oldugu (sayi olarak)
+- freezer_friendly: Tarif dondurucuya uygun mu? true/false. Dondurulabilir yemekler: börekler, köfteler, soslar, hamur işleri, güveçler, dolmalar, pilav, kuru baklagiller, et yemekleri (haşlama/kavurma). Dondurulmaya UYGUN OLMAYAN yemekler: salatalar, taze meyve/sebze yemekleri, yoğurtlu yemekler, kızartmalar (gevrekliğini kaybeder), mayonezli soslar.
 - tags: Tarife uygun etiketler (Turkce karakterlerle, kucuk harf, tekrarsiz). SADECE su etiketlerden sec: ${PREDEFINED_TAGS.map(t => `"${t}"`).join(", ")}. Baska etiket KULLANMA. En fazla 5 etiket sec.
 - best_thumbnail_index: Eger birden fazla gorsel varsa, kapak gorseline (ilk gorsel) en cok benzeyen ama oynatma (play) ikonu OLMAYAN gorselin sira numarasini yaz (0'dan baslar, kapak gorseli 0). Eger sadece kapak gorseli varsa veya hicbir gorsel yoksa 0 yaz.
 - platform_user: Videoyu paylasan kullanicinin adi. Caption'dan cikart. "@" isareti varsa kaldir. Ornegin "27K likes, 540 comments - chefayse on ..." -> "chefayse". Veya "@mutfaktayiz" -> "mutfaktayiz". Bulamazsan null yaz.
@@ -139,6 +141,42 @@ Onemli kurallar:
     model: "claude-sonnet-4-6",
     max_tokens: 8192,
     messages: [{ role: "user", content }],
+  });
+
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new Error("No text response from Claude");
+  }
+
+  const jsonString = textBlock.text
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
+
+  return JSON.parse(jsonString);
+}
+
+export async function classifyFreezerFriendly(
+  recipes: { id: string; title: string; tags: string[]; ingredients: string[] }[]
+): Promise<{ id: string; freezer_friendly: boolean }[]> {
+  const prompt = `Sen bir meal prep ve dondurma uzmanısın. Sana tarifler vereceğim. Her tarif için dondurucuya uygun olup olmadığını belirle.
+
+Tarifler:
+${recipes.map((r, i) => `${i + 1}. [${r.id}] ${r.title} - Etiketler: ${r.tags.join(", ")} - Malzemeler: ${r.ingredients.join(", ")}`).join("\n")}
+
+Kurallar:
+- Dondurulabilir: çorbalar, börekler, köfteler, soslar, hamur işleri, güveçler, dolmalar, pilav, kuru baklagil yemekleri, et yemekleri (haşlama/kavurma), kekler
+- Dondurulmaya UYGUN OLMAYAN: salatalar, taze meyve/sebze yemekleri, yoğurtlu yemekler, kızartmalar (gevrekliğini kaybeder), mayonezli soslar, sütlü tatlılar
+
+SADECE aşağıdaki JSON formatında yanıt ver (başka hiçbir şey yazma):
+[
+  { "id": "uuid", "freezer_friendly": true }
+]`;
+
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 8192,
+    messages: [{ role: "user", content: prompt }],
   });
 
   const textBlock = response.content.find((b) => b.type === "text");
@@ -201,7 +239,7 @@ export async function generateMealPlan(input: MealPlanRequest) {
     : "Çocuk yok, sadece yetişkinler.";
 
   const recipeList = (input.available_recipes ?? [])
-    .map((r, i) => `${i + 1}. ${r.title} (${r.cooking_time_minutes ?? "?"} dk) [${r.tags.join(", ")}] - Malzemeler: ${r.ingredients.join(", ")}`)
+    .map((r, i) => `${i + 1}. ${r.title} (${r.cooking_time_minutes ?? "?"} dk) [${r.tags.join(", ")}]${r.freezer_friendly ? " [DONDURULABILIR]" : ""} - Malzemeler: ${r.ingredients.join(", ")}`)
     .join("\n");
 
   const prompt = `Sen bir meal prep (yemek hazırlık) uzmanısın. Kullanıcı için detaylı bir yemek planı oluştur.

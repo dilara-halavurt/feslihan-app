@@ -266,6 +266,7 @@ struct RecipeDTO: Codable {
     var health_score: Double?
     var thumbnail_url: String?
     var thumbnail_base64: String?
+    var freezer_friendly: Bool?
 
     var requested_by: String
     var user_id: String?
@@ -309,6 +310,7 @@ extension RecipeDTO {
             cuisine: processed.cuisine,
             difficulty: processed.difficulty,
             thumbnail_base64: processed.thumbnailData?.base64EncodedString(),
+            freezer_friendly: processed.freezerFriendly,
             requested_by: requestedBy,
             user_id: userId
         )
@@ -344,7 +346,8 @@ extension RecipeDTO {
             fiberGrams: fiber_grams,
             platformUser: platform_user,
             platform: platform,
-            folderId: folder_id
+            folderId: folder_id,
+            freezerFriendly: freezer_friendly ?? false
         )
     }
 
@@ -377,7 +380,8 @@ extension RecipeDTO {
             tags: tags ?? [],
             platformUser: platform_user,
             likesCount: likes_count,
-            commentsCount: comments_count
+            commentsCount: comments_count,
+            freezerFriendly: freezer_friendly ?? false
         )
     }
 }
