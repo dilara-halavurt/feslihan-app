@@ -992,7 +992,8 @@ struct SwipeResultsView: View {
                         ingredients: item.dto.ingredients_without_measures,
                         description: String(item.dto.description.prefix(120)),
                         color: cardColors[index % cardColors.count],
-                        thumbnailData: thumbData
+                        thumbnailData: thumbData,
+                        sourceURL: item.dto.url
                     )
                     return (index, recipe)
                 }
@@ -1023,6 +1024,7 @@ struct SuggestedRecipe: Identifiable {
     let description: String
     let color: Color
     var thumbnailData: Data?
+    var sourceURL: String?
 
     static let placeholders: [SuggestedRecipe] = [
         SuggestedRecipe(title: "Menemen", duration: "15 dk", difficulty: "Kolay", ingredients: ["Yumurta", "Domates", "Biber"], description: "Klasik Türk kahvaltısı. Domatesli, biberli, yumurtalı bir lezzet.", color: Color(hex: 0xD94B2B)),
@@ -1042,35 +1044,45 @@ private struct RecipeSuggestionCard: View {
     let recipe: SuggestedRecipe
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            // Full card background
-            if let data = recipe.thumbnailData,
-               let uiImage = UIImage(data: data) {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                recipe.color
+        VStack(spacing: 0) {
+            // Thumbnail
+            ZStack {
+                if let data = recipe.thumbnailData,
+                   let uiImage = UIImage(data: data) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 280)
+                        .clipped()
+                } else {
+                    recipe.color
+                        .frame(height: 280)
+                }
+
+                // Play button if there's a source URL
+                if recipe.sourceURL != nil {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .shadow(radius: 4)
+                }
+            }
+            .onTapGesture {
+                if let urlStr = recipe.sourceURL, let url = URL(string: urlStr) {
+                    UIApplication.shared.open(url)
+                }
             }
 
-            // Gradient overlay at bottom
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.6), .black.opacity(0.85)],
-                startPoint: .center,
-                endPoint: .bottom
-            )
-
-            // Bottom text overlay
+            // Info section
             VStack(alignment: .leading, spacing: 8) {
                 Text(recipe.title)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundStyle(DS.ink)
 
                 if !recipe.description.isEmpty {
                     Text(recipe.description)
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.8))
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(DS.smoke)
                         .lineLimit(2)
                 }
 
@@ -1084,13 +1096,14 @@ private struct RecipeSuggestionCard: View {
                     Label("\(recipe.ingredients.count) malzeme", systemImage: "leaf")
                 }
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(DS.smoke)
             }
-            .padding(20)
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(DS.cream)
         }
-        .frame(height: 420)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
     }
 }
 
