@@ -128,7 +128,7 @@ struct CookingModeView: View {
                 .padding(.bottom, 40)
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .persistentSystemOverlays(.hidden)
         .onChange(of: currentIndex) {
             stopTimer()
