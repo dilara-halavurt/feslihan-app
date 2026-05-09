@@ -999,6 +999,12 @@ app.get("/creators/:username", async (req, res) => {
   }
 
   const user = result[0];
+
+  // If creator has no profile picture, try fetching it in the background
+  if (!user.profilePictureUrl) {
+    ensureCreator(user.username, user.platform).catch(() => {});
+  }
+
   res.json({
     username: user.username,
     platform: user.platform,
