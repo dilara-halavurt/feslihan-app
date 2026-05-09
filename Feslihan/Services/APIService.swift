@@ -1,11 +1,8 @@
 import Foundation
 
 enum APIService {
-    #if DEBUG
-    static let baseURL = "http://localhost:3000"
-    #else
+    // TODO: Restore localhost for local dev when backend is running
     static let baseURL = "https://feslihan-app.vercel.app"
-    #endif
 
     /// Check if a recipe already exists for this URL.
     static func lookup(url: String) async -> RecipeDTO? {

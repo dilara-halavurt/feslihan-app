@@ -24,7 +24,7 @@ final class Recipe {
     var platformUser: String?
     var platform: String?
     var folderId: String?
-    var freezerFriendly: Bool
+    var freezerFriendly: Bool?
     var createdAt: Date
 
     init(
@@ -48,7 +48,7 @@ final class Recipe {
         platformUser: String? = nil,
         platform: String? = nil,
         folderId: String? = nil,
-        freezerFriendly: Bool = false
+        freezerFriendly: Bool? = nil
     ) {
         self.id = UUID()
         self.title = title

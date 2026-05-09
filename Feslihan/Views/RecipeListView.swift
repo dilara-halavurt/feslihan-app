@@ -414,8 +414,13 @@ struct RecipeListView: View {
     }
 
     private func syncFromBackend() async {
-        guard let userId = Clerk.shared.user?.id else { return }
+        guard let userId = Clerk.shared.user?.id else {
+            print("[Sync] No Clerk user ID — skipping sync")
+            return
+        }
+        print("[Sync] Fetching recipes for user: \(userId)")
         let remoteRecipes = await APIService.fetchUserRecipes(userId: userId)
+        print("[Sync] Got \(remoteRecipes.count) recipes from backend")
         guard !remoteRecipes.isEmpty else { return }
 
         let remoteURLs = Set(remoteRecipes.map { $0.url })
@@ -430,12 +435,12 @@ struct RecipeListView: View {
         let localByURL = Dictionary(recipes.compactMap { r in
             r.sourceURL.map { ($0, r) }
         }, uniquingKeysWith: { first, _ in first })
+
+        // First pass: insert/update recipes immediately (no thumbnail download)
+        var needsThumbnail: [(Recipe, String)] = []
         for dto in remoteRecipes {
             let fullThumbURL = dto.thumbnail_url.map { $0.hasPrefix("http") ? $0 : "\(APIService.baseURL)\($0)" }
             if let existing = localByURL[dto.url] {
-                if existing.thumbnailData == nil {
-                    existing.thumbnailData = await CaptionService.downloadImage(from: fullThumbURL)
-                }
                 existing.likesCount = dto.likes_count
                 existing.cuisine = dto.cuisine
                 existing.difficulty = dto.difficulty
@@ -451,12 +456,24 @@ struct RecipeListView: View {
                 existing.fatGrams = dto.fat_grams
                 existing.fiberGrams = dto.fiber_grams
                 existing.folderId = dto.folder_id
+                if existing.thumbnailData == nil, let url = fullThumbURL {
+                    needsThumbnail.append((existing, url))
+                }
             } else {
-                let thumbData = await CaptionService.downloadImage(from: fullThumbURL)
-                modelContext.insert(dto.toRecipe(thumbnailData: thumbData))
+                let recipe = dto.toRecipe(thumbnailData: nil)
+                modelContext.insert(recipe)
+                if let url = fullThumbURL {
+                    needsThumbnail.append((recipe, url))
+                }
             }
         }
 
+        try? modelContext.save()
+
+        // Second pass: download thumbnails in the background
+        for (recipe, url) in needsThumbnail {
+            recipe.thumbnailData = await CaptionService.downloadImage(from: url)
+        }
         try? modelContext.save()
     }
 
