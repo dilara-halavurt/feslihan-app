@@ -124,6 +124,49 @@ struct RecipeListView: View {
         GridItem(.flexible(), spacing: 12),
     ]
 
+    private var activeFiltersBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(filters.tags.sorted(), id: \.self) { tag in
+                    ActiveFilterChip(label: tag) { filters.tags.remove(tag) }
+                }
+                ForEach(filters.cuisines.sorted(), id: \.self) { cuisine in
+                    ActiveFilterChip(label: cuisine) { filters.cuisines.remove(cuisine) }
+                }
+                ForEach(filters.difficulties.sorted(), id: \.self) { difficulty in
+                    let label = difficultyOptions.first(where: { $0.value == difficulty })?.label ?? difficulty
+                    ActiveFilterChip(label: label) { filters.difficulties.remove(difficulty) }
+                }
+                if let range = filters.cookingTimeRange {
+                    ActiveFilterChip(label: range.label) { filters.cookingTimeRange = nil }
+                }
+                ForEach(filters.priceTiers.sorted(), id: \.self) { tier in
+                    let label = priceTierOptions.first(where: { $0.value == tier })?.label ?? tier
+                    ActiveFilterChip(label: label) { filters.priceTiers.remove(tier) }
+                }
+
+                Button {
+                    filters.reset()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("Tümünü Temizle")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundStyle(DS.ember)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 10)
+                    .overlay(
+                        Capsule().strokeBorder(DS.ember.opacity(0.4), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -163,6 +206,10 @@ struct RecipeListView: View {
                             .background(DS.sand)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                             .padding(.horizontal, 16)
+
+                            if filters.isActive {
+                                activeFiltersBar
+                            }
 
                             if searchText.isEmpty && selectedFolder == nil {
                                 // Folders section
@@ -376,8 +423,11 @@ struct RecipeListView: View {
                 RecipeFilterSheet(
                     filters: $filters,
                     availableTags: availableTags,
-                    availableCuisines: availableCuisines
+                    availableCuisines: availableCuisines,
+                    matchingCount: filtered.count
                 )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .alert("Yeni Klasör", isPresented: $showCreateFolder) {
                 TextField("Klasör adı", text: $newFolderName)
@@ -806,14 +856,16 @@ struct RecipeFilterSheet: View {
     @Binding var filters: RecipeFilters
     let availableTags: [String]
     let availableCuisines: [String]
+    let matchingCount: Int
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
+            VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     if !availableTags.isEmpty {
-                        FilterSection(title: "Etiket") {
+                        FilterSection(title: "Etiket", selectedCount: filters.tags.count) {
                             FilterChipGrid(
                                 items: availableTags,
                                 isSelected: { filters.tags.contains($0) },
@@ -829,7 +881,7 @@ struct RecipeFilterSheet: View {
                     }
 
                     if !availableCuisines.isEmpty {
-                        FilterSection(title: "Mutfak") {
+                        FilterSection(title: "Mutfak", selectedCount: filters.cuisines.count) {
                             FilterChipGrid(
                                 items: availableCuisines,
                                 isSelected: { filters.cuisines.contains($0) },
@@ -844,7 +896,7 @@ struct RecipeFilterSheet: View {
                         }
                     }
 
-                    FilterSection(title: "Zorluk") {
+                    FilterSection(title: "Zorluk", selectedCount: filters.difficulties.count) {
                         FilterChipGrid(
                             items: difficultyOptions.map { $0.label },
                             isSelected: { label in
@@ -862,7 +914,7 @@ struct RecipeFilterSheet: View {
                         )
                     }
 
-                    FilterSection(title: "Pişirme Süresi") {
+                    FilterSection(title: "Pişirme Süresi", selectedCount: filters.cookingTimeRange == nil ? 0 : 1) {
                         FilterChipGrid(
                             items: CookingTimeRange.allCases.map { $0.label },
                             isSelected: { label in
@@ -879,7 +931,7 @@ struct RecipeFilterSheet: View {
                         )
                     }
 
-                    FilterSection(title: "Fiyat") {
+                    FilterSection(title: "Fiyat", selectedCount: filters.priceTiers.count) {
                         FilterChipGrid(
                             items: priceTierOptions.map { $0.label },
                             isSelected: { label in
@@ -900,6 +952,24 @@ struct RecipeFilterSheet: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 20)
             }
+
+            Button {
+                dismiss()
+            } label: {
+                Text(applyButtonLabel)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(DS.ember)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 16)
+            .background(DS.cream)
+            }
             .background(DS.cream)
             .navigationTitle("Filtrele")
             .navigationBarTitleDisplayMode(.inline)
@@ -911,29 +981,66 @@ struct RecipeFilterSheet: View {
                     .foregroundStyle(filters.isActive ? DS.ember : DS.dust)
                     .disabled(!filters.isActive)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Tamam") {
-                        dismiss()
-                    }
-                    .foregroundStyle(DS.ember)
-                    .fontWeight(.semibold)
-                }
             }
         }
+    }
+
+    private var applyButtonLabel: String {
+        if !filters.isActive {
+            return "Tamam"
+        }
+        if matchingCount == 0 {
+            return "Eşleşen tarif yok"
+        }
+        return "\(matchingCount) Tarifi Göster"
     }
 }
 
 private struct FilterSection<Content: View>: View {
     let title: String
+    var selectedCount: Int = 0
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.sectionHeader())
-                .foregroundStyle(DS.ink)
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.sectionHeader())
+                    .foregroundStyle(DS.ink)
+                if selectedCount > 0 {
+                    Text("\(selectedCount)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(minWidth: 18, minHeight: 18)
+                        .padding(.horizontal, 4)
+                        .background(DS.ember)
+                        .clipShape(Capsule())
+                }
+            }
             content()
         }
+    }
+}
+
+private struct ActiveFilterChip: View {
+    let label: String
+    let onRemove: () -> Void
+
+    var body: some View {
+        Button(action: onRemove) {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.system(size: 13, weight: .medium))
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .foregroundStyle(.white)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .background(DS.ember)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 }
 
