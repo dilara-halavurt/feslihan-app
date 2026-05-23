@@ -12,6 +12,7 @@
 		16BAE34B9B74D9EAF2DE36C2 /* RecipeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C106C18CA48DECC3172126F /* RecipeDetailView.swift */; };
 		CCDAA0A75D83A62982321774 /* CookingModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19CAECAC469F39AF9EEC221B /* CookingModeView.swift */; };
 		2131670AB7DC32892D6618F0 /* WhatToEatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DBA950AF8742A25F6D2F326 /* WhatToEatView.swift */; };
+		11AA11AA11AA11AA11AA11AA /* PantryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22BB22BB22BB22BB22BB22BB /* PantryView.swift */; };
 		23504B1FF1DC11A623EC73BC /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F992BF94307474C2BFF7C205 /* PaywallView.swift */; };
 		3A7C6E58826E07BEC2FA782D /* MealEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05085FE6F97FB2C1E7E27A3A /* MealEditSheet.swift */; };
 		3C189F320DF6FE39594C462F /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0476CE3A99851992669AF1 /* SplashView.swift */; };
@@ -54,6 +55,7 @@
 		4C775F76984A72AE6DB00F07 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4CFC53F41E73A7D8A00FB0D3 /* IngredientsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngredientsView.swift; sourceTree = "<group>"; };
 		5DBA950AF8742A25F6D2F326 /* WhatToEatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatToEatView.swift; sourceTree = "<group>"; };
+		22BB22BB22BB22BB22BB22BB /* PantryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PantryView.swift; sourceTree = "<group>"; };
 		61A77A661A1D0EFE85F7EB23 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		67C8FCE73D37CA447073D5AB /* SubscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionService.swift; sourceTree = "<group>"; };
 		691687B0715514978BE8BBB1 /* ModeSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeSelectionView.swift; sourceTree = "<group>"; };
@@ -144,6 +146,7 @@
 				05085FE6F97FB2C1E7E27A3A /* MealEditSheet.swift */,
 				C78BB5E44642C36A066EAA62 /* MealPrepView.swift */,
 				691687B0715514978BE8BBB1 /* ModeSelectionView.swift */,
+				22BB22BB22BB22BB22BB22BB /* PantryView.swift */,
 				F992BF94307474C2BFF7C205 /* PaywallView.swift */,
 				2C106C18CA48DECC3172126F /* RecipeDetailView.swift */,
 				19CAECAC469F39AF9EEC221B /* CookingModeView.swift */,
@@ -254,6 +257,7 @@
 				B47297C2AFD8D248C21FD1D3 /* MealPrepView.swift in Sources */,
 				788BA106E0E3C65E6216BBEB /* ModeSelectionView.swift in Sources */,
 				BFDE8A00D297EFAFEE20D2C7 /* Movie.swift in Sources */,
+				11AA11AA11AA11AA11AA11AA /* PantryView.swift in Sources */,
 				23504B1FF1DC11A623EC73BC /* PaywallView.swift in Sources */,
 				AA759DF2A392EB88E1B9E373 /* Recipe.swift in Sources */,
 				16BAE34B9B74D9EAF2DE36C2 /* RecipeDetailView.swift in Sources */,

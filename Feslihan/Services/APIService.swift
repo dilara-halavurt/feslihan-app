@@ -152,6 +152,43 @@ enum APIService {
         return try? JSONDecoder().decode(RecipeCostDTO.self, from: data)
     }
 
+    // MARK: - Pantry
+
+    /// Fetch the user's pantry items.
+    static func fetchPantry(userId: String) async -> [PantryItemDTO] {
+        guard let url = URL(string: "\(baseURL)/users/\(userId)/pantry") else { return [] }
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+        return (try? JSONDecoder().decode([PantryItemDTO].self, from: data)) ?? []
+    }
+
+    /// Add an ingredient to the user's pantry.
+    @discardableResult
+    static func addPantryItem(userId: String, ingredientName: String) async -> PantryItemDTO? {
+        guard let url = URL(string: "\(baseURL)/users/\(userId)/pantry") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["ingredient_name": ingredientName]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200...201).contains(http.statusCode) else { return nil }
+        return try? JSONDecoder().decode(PantryItemDTO.self, from: data)
+    }
+
+    /// Remove an ingredient from the user's pantry.
+    @discardableResult
+    static func deletePantryItem(userId: String, ingredientName: String) async -> Bool {
+        guard let encoded = ingredientName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "\(baseURL)/users/\(userId)/pantry/\(encoded)") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 204 else { return false }
+        return true
+    }
+
     /// Fetch instagram user info including profile picture URL.
     static func fetchCreator(username: String) async -> InstagramUserDTO? {
         guard let requestURL = URL(string: "\(baseURL)/creators/\(username)") else { return nil }
@@ -164,6 +201,13 @@ enum APIService {
 
         return try? JSONDecoder().decode(InstagramUserDTO.self, from: data)
     }
+}
+
+struct PantryItemDTO: Codable, Identifiable {
+    var id: String
+    var user_id: String
+    var ingredient_name: String
+    var added_at: String?
 }
 
 struct FolderDTO: Codable, Identifiable {
