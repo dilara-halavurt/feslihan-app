@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import https from "https";
 import { db } from "./db.js";
-import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans } from "./schema.js";
+import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans, userPantry } from "./schema.js";
 import { uploadImage, s3KeyFromUrl, getImage } from "./s3.js";
 import { analyzeRecipe, generateMealPlan, classifyIngredients, classifyFreezerFriendly } from "./ai.js";
 import { eq, desc, inArray, and } from "drizzle-orm";
@@ -1248,6 +1248,72 @@ app.put("/meal-plans/:id", async (req, res) => {
 // Delete a meal plan
 app.delete("/meal-plans/:id", async (req, res) => {
   await db.delete(mealPlans).where(eq(mealPlans.id, req.params.id));
+  res.status(204).send();
+});
+
+// --- Pantry ---
+
+// List user's pantry items
+app.get("/users/:userId/pantry", async (req, res) => {
+  const result = await db
+    .select()
+    .from(userPantry)
+    .where(eq(userPantry.userId, req.params.userId))
+    .orderBy(desc(userPantry.addedAt));
+
+  res.json(toSnake(result));
+});
+
+// Add an ingredient to the user's pantry (idempotent on user_id + ingredient_name)
+app.post("/users/:userId/pantry", async (req, res) => {
+  const { ingredient_name } = req.body;
+  if (!ingredient_name || typeof ingredient_name !== "string") {
+    res.status(400).json({ error: "ingredient_name required" });
+    return;
+  }
+
+  const existing = await db
+    .select()
+    .from(userPantry)
+    .where(
+      and(
+        eq(userPantry.userId, req.params.userId),
+        eq(userPantry.ingredientName, ingredient_name)
+      )
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    res.status(200).json(toSnake(existing[0]));
+    return;
+  }
+
+  const result = await db
+    .insert(userPantry)
+    .values({ userId: req.params.userId, ingredientName: ingredient_name })
+    .returning();
+
+  res.status(201).json(toSnake(result[0]));
+});
+
+// Remove an ingredient from the user's pantry
+app.delete("/users/:userId/pantry/:ingredientName", async (req, res) => {
+  const ingredientName = decodeURIComponent(req.params.ingredientName);
+  const result = await db
+    .delete(userPantry)
+    .where(
+      and(
+        eq(userPantry.userId, req.params.userId),
+        eq(userPantry.ingredientName, ingredientName)
+      )
+    )
+    .returning();
+
+  if (result.length === 0) {
+    res.status(404).json({ error: "Pantry item not found" });
+    return;
+  }
+
   res.status(204).send();
 });
 
