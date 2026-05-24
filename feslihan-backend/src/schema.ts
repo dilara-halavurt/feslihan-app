@@ -180,6 +180,18 @@ export const userRecipes = pgTable("user_recipes", {
     .defaultNow(),
 });
 
+export const userShoppingList = pgTable("user_shopping_list", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id", { length: 255 })
+    .notNull()
+    .references(() => users.clerkId),
+  ingredientName: varchar("ingredient_name", { length: 255 }).notNull(),
+  isChecked: boolean("is_checked").notNull().default(false),
+  addedAt: timestamp("added_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const mealPlans = pgTable("meal_plans", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: varchar("user_id", { length: 255 })

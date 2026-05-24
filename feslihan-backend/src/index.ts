@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import https from "https";
 import { db } from "./db.js";
-import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans } from "./schema.js";
+import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans, userShoppingList } from "./schema.js";
 import { uploadImage, s3KeyFromUrl, getImage } from "./s3.js";
 import { analyzeRecipe, generateMealPlan, classifyIngredients, classifyFreezerFriendly } from "./ai.js";
 import { eq, desc, inArray, and } from "drizzle-orm";
@@ -1248,6 +1248,81 @@ app.put("/meal-plans/:id", async (req, res) => {
 // Delete a meal plan
 app.delete("/meal-plans/:id", async (req, res) => {
   await db.delete(mealPlans).where(eq(mealPlans.id, req.params.id));
+  res.status(204).send();
+});
+
+// --- Shopping List ---
+
+// Get user's shopping list
+app.get("/users/:userId/shopping-list", async (req, res) => {
+  const result = await db
+    .select()
+    .from(userShoppingList)
+    .where(eq(userShoppingList.userId, req.params.userId))
+    .orderBy(desc(userShoppingList.addedAt));
+
+  res.json(result.map(toSnake));
+});
+
+// Add item to shopping list
+app.post("/users/:userId/shopping-list", async (req, res) => {
+  const { ingredient_name } = req.body;
+  if (!ingredient_name || typeof ingredient_name !== "string" || !ingredient_name.trim()) {
+    res.status(400).json({ error: "ingredient_name required" });
+    return;
+  }
+
+  const result = await db
+    .insert(userShoppingList)
+    .values({ userId: req.params.userId, ingredientName: ingredient_name.trim() })
+    .returning();
+
+  res.status(201).json(toSnake(result[0]));
+});
+
+// Update shopping list item (toggle checked or rename)
+app.put("/users/:userId/shopping-list/:id", async (req, res) => {
+  const { is_checked, ingredient_name } = req.body;
+  const updates: Record<string, any> = {};
+  if (is_checked !== undefined) updates.isChecked = is_checked;
+  if (ingredient_name !== undefined) updates.ingredientName = ingredient_name;
+
+  const result = await db
+    .update(userShoppingList)
+    .set(updates)
+    .where(
+      and(
+        eq(userShoppingList.userId, req.params.userId),
+        eq(userShoppingList.id, req.params.id)
+      )
+    )
+    .returning();
+
+  if (result.length === 0) {
+    res.status(404).json({ error: "Shopping list item not found" });
+    return;
+  }
+
+  res.json(toSnake(result[0]));
+});
+
+// Delete shopping list item
+app.delete("/users/:userId/shopping-list/:id", async (req, res) => {
+  const result = await db
+    .delete(userShoppingList)
+    .where(
+      and(
+        eq(userShoppingList.userId, req.params.userId),
+        eq(userShoppingList.id, req.params.id)
+      )
+    )
+    .returning();
+
+  if (result.length === 0) {
+    res.status(404).json({ error: "Shopping list item not found" });
+    return;
+  }
+
   res.status(204).send();
 });
 
