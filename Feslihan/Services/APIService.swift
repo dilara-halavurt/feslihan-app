@@ -152,6 +152,48 @@ enum APIService {
         return try? JSONDecoder().decode(RecipeCostDTO.self, from: data)
     }
 
+    // MARK: - Shopping List
+
+    static func fetchShoppingList(userId: String) async -> [ShoppingListItemDTO] {
+        guard let url = URL(string: "\(baseURL)/users/\(userId)/shopping-list") else { return [] }
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+        return (try? JSONDecoder().decode([ShoppingListItemDTO].self, from: data)) ?? []
+    }
+
+    static func addShoppingListItem(userId: String, ingredientName: String) async -> ShoppingListItemDTO? {
+        guard let url = URL(string: "\(baseURL)/users/\(userId)/shopping-list") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["ingredient_name": ingredientName]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 201 else { return nil }
+        return try? JSONDecoder().decode(ShoppingListItemDTO.self, from: data)
+    }
+
+    static func updateShoppingListItem(userId: String, id: String, isChecked: Bool) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/users/\(userId)/shopping-list/\(id)") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["is_checked": isChecked]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200 else { return false }
+        return true
+    }
+
+    static func deleteShoppingListItem(userId: String, id: String) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/users/\(userId)/shopping-list/\(id)") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 204 else { return false }
+        return true
+    }
+
     /// Fetch instagram user info including profile picture URL.
     static func fetchCreator(username: String) async -> InstagramUserDTO? {
         guard let requestURL = URL(string: "\(baseURL)/creators/\(username)") else { return nil }
@@ -206,6 +248,14 @@ struct IngredientDTO: Codable, Identifiable {
         default: return nil
         }
     }
+}
+
+struct ShoppingListItemDTO: Codable, Identifiable {
+    let id: String
+    let user_id: String
+    let ingredient_name: String
+    let is_checked: Bool
+    let added_at: String
 }
 
 struct InstagramUserDTO: Codable {

@@ -6,6 +6,7 @@ enum AppMode: String, CaseIterable {
     case mealPrep
     case whatToEat
     case browse
+    case shoppingList
 }
 
 struct ModeSelectionView: View {
@@ -44,6 +45,8 @@ struct ModeSelectionView: View {
                     )
                 case .whatToEat:
                     WhatToEatView(onBack: goBack)
+                case .shoppingList:
+                    ShoppingListView(onBack: goBack)
                 }
             }
             .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -108,6 +111,19 @@ struct ModeSelectionView: View {
                         .onTapGesture {
                             withAnimation(.spring(response: 0.2)) {
                                 selectedMode = .browse
+                            }
+                        }
+
+                        ModeCard(
+                            icon: "cart",
+                            title: "Alışveriş Listesi",
+                            subtitle: "Alacağın malzemeleri takip et"
+                        )
+                        .opacity(cardsVisible ? 1 : 0)
+                        .offset(y: cardsVisible ? 0 : 20)
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.2)) {
+                                selectedMode = .shoppingList
                             }
                         }
                     }
