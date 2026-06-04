@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import https from "https";
 import { db } from "./db.js";
-import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans } from "./schema.js";
+import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans, userPantry, userShoppingList } from "./schema.js";
 import { uploadImage, s3KeyFromUrl, getImage } from "./s3.js";
 import { analyzeRecipe, generateMealPlan, classifyIngredients, classifyFreezerFriendly } from "./ai.js";
 import { eq, desc, inArray, and } from "drizzle-orm";
@@ -1248,6 +1248,187 @@ app.put("/meal-plans/:id", async (req, res) => {
 // Delete a meal plan
 app.delete("/meal-plans/:id", async (req, res) => {
   await db.delete(mealPlans).where(eq(mealPlans.id, req.params.id));
+  res.status(204).send();
+});
+
+// ── Pantry ──────────────────────────────────────────────────────────────
+
+app.get("/users/:userId/pantry", async (req, res) => {
+  const rows = await db
+    .select({
+      id: userPantry.id,
+      ingredient_id: ingredients.id,
+      ingredient_name: ingredients.name,
+      price_tier: ingredients.priceTier,
+      availability: ingredients.availability,
+      added_at: userPantry.addedAt,
+    })
+    .from(userPantry)
+    .innerJoin(ingredients, eq(userPantry.ingredientId, ingredients.id))
+    .where(eq(userPantry.userId, req.params.userId))
+    .orderBy(desc(userPantry.addedAt));
+  res.json(rows);
+});
+
+app.post("/users/:userId/pantry", async (req, res) => {
+  const { ingredient_names } = req.body as { ingredient_names: string[] };
+  if (!ingredient_names?.length) {
+    return res.status(400).json({ error: "ingredient_names required" });
+  }
+
+  // Resolve names to IDs
+  const lowered = ingredient_names.map((n) => n.toLowerCase());
+  const found = await db
+    .select({ id: ingredients.id, name: ingredients.name })
+    .from(ingredients)
+    .where(inArray(ingredients.name, ingredient_names));
+
+  // Also try lowercase match for any missed
+  const foundNames = new Set(found.map((f) => f.name));
+  const missed = ingredient_names.filter((n) => !foundNames.has(n));
+  if (missed.length > 0) {
+    const allIngredients = await db.select({ id: ingredients.id, name: ingredients.name }).from(ingredients);
+    for (const m of missed) {
+      const match = allIngredients.find((i) => i.name.toLowerCase() === m.toLowerCase());
+      if (match) found.push(match);
+    }
+  }
+
+  const ingredientIds = found.map((f) => f.id);
+  if (ingredientIds.length === 0) {
+    return res.status(201).json({ added: 0 });
+  }
+
+  // Filter out ingredients already in pantry
+  const existing = await db
+    .select({ ingredientId: userPantry.ingredientId })
+    .from(userPantry)
+    .where(
+      and(
+        eq(userPantry.userId, req.params.userId),
+        inArray(userPantry.ingredientId, ingredientIds)
+      )
+    );
+  const existingIds = new Set(existing.map((e) => e.ingredientId));
+  const newIds = ingredientIds.filter((id) => !existingIds.has(id));
+
+  if (newIds.length > 0) {
+    await db.insert(userPantry).values(
+      newIds.map((id) => ({
+        userId: req.params.userId,
+        ingredientId: id,
+      }))
+    );
+  }
+  res.status(201).json({ added: newIds.length });
+});
+
+app.delete("/users/:userId/pantry/:ingredientId", async (req, res) => {
+  await db
+    .delete(userPantry)
+    .where(
+      and(
+        eq(userPantry.userId, req.params.userId),
+        eq(userPantry.ingredientId, req.params.ingredientId)
+      )
+    );
+  res.status(204).send();
+});
+
+// ── Shopping List ───────────────────────────────────────────────────────
+
+app.get("/users/:userId/shopping-list", async (req, res) => {
+  const rows = await db
+    .select({
+      id: userShoppingList.id,
+      ingredient_id: ingredients.id,
+      ingredient_name: ingredients.name,
+      price_tier: ingredients.priceTier,
+      availability: ingredients.availability,
+      is_checked: userShoppingList.isChecked,
+      added_at: userShoppingList.addedAt,
+    })
+    .from(userShoppingList)
+    .innerJoin(ingredients, eq(userShoppingList.ingredientId, ingredients.id))
+    .where(eq(userShoppingList.userId, req.params.userId))
+    .orderBy(desc(userShoppingList.addedAt));
+  res.json(rows);
+});
+
+app.post("/users/:userId/shopping-list", async (req, res) => {
+  const { ingredient_names } = req.body as { ingredient_names: string[] };
+  if (!ingredient_names?.length) {
+    return res.status(400).json({ error: "ingredient_names required" });
+  }
+
+  // Resolve names to IDs
+  const found = await db
+    .select({ id: ingredients.id, name: ingredients.name })
+    .from(ingredients)
+    .where(inArray(ingredients.name, ingredient_names));
+
+  const foundNames = new Set(found.map((f) => f.name));
+  const missed = ingredient_names.filter((n) => !foundNames.has(n));
+  if (missed.length > 0) {
+    const allIngredients = await db.select({ id: ingredients.id, name: ingredients.name }).from(ingredients);
+    for (const m of missed) {
+      const match = allIngredients.find((i) => i.name.toLowerCase() === m.toLowerCase());
+      if (match) found.push(match);
+    }
+  }
+
+  const ingredientIds = found.map((f) => f.id);
+  if (ingredientIds.length === 0) {
+    return res.status(201).json({ added: 0 });
+  }
+
+  // Filter out ingredients already in shopping list
+  const existing = await db
+    .select({ ingredientId: userShoppingList.ingredientId })
+    .from(userShoppingList)
+    .where(
+      and(
+        eq(userShoppingList.userId, req.params.userId),
+        inArray(userShoppingList.ingredientId, ingredientIds)
+      )
+    );
+  const existingIds = new Set(existing.map((e) => e.ingredientId));
+  const newIds = ingredientIds.filter((id) => !existingIds.has(id));
+
+  if (newIds.length > 0) {
+    await db.insert(userShoppingList).values(
+      newIds.map((id) => ({
+        userId: req.params.userId,
+        ingredientId: id,
+      }))
+    );
+  }
+  res.status(201).json({ added: newIds.length });
+});
+
+app.put("/users/:userId/shopping-list/:itemId/check", async (req, res) => {
+  const { is_checked } = req.body as { is_checked: boolean };
+  await db
+    .update(userShoppingList)
+    .set({ isChecked: is_checked })
+    .where(
+      and(
+        eq(userShoppingList.id, req.params.itemId),
+        eq(userShoppingList.userId, req.params.userId)
+      )
+    );
+  res.json({ ok: true });
+});
+
+app.delete("/users/:userId/shopping-list/:itemId", async (req, res) => {
+  await db
+    .delete(userShoppingList)
+    .where(
+      and(
+        eq(userShoppingList.id, req.params.itemId),
+        eq(userShoppingList.userId, req.params.userId)
+      )
+    );
   res.status(204).send();
 });
 
