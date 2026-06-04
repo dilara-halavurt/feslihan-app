@@ -193,6 +193,33 @@ export const mealPlans = pgTable("meal_plans", {
     .defaultNow(),
 });
 
+export const userPantry = pgTable("user_pantry", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id", { length: 255 })
+    .notNull()
+    .references(() => users.clerkId),
+  ingredientId: uuid("ingredient_id")
+    .notNull()
+    .references(() => ingredients.id),
+  addedAt: timestamp("added_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const userShoppingList = pgTable("user_shopping_list", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id", { length: 255 })
+    .notNull()
+    .references(() => users.clerkId),
+  ingredientId: uuid("ingredient_id")
+    .notNull()
+    .references(() => ingredients.id),
+  isChecked: boolean("is_checked").notNull().default(false),
+  addedAt: timestamp("added_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export type Recipe = typeof recipes.$inferSelect;
 export type NewRecipe = typeof recipes.$inferInsert;
 export type IngredientRow = typeof ingredients.$inferSelect;

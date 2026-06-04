@@ -6,14 +6,14 @@ import ClerkKit
 struct WhatToEatView: View {
     var onBack: (() -> Void)?
 
-    @State private var step: WhatToEatStep = .bubbles
-    @State private var selectedIngredients: Set<String> = []
+    @State private var step: WhatToEatStep = .time
+    @State private var pantryIngredients: Set<String> = []
     @State private var selectedTime: CookingTime = .medium
     @State private var selectedCuisine: CuisineType = .any
     @State private var selectedCategory: MealCategory = .any
 
     enum WhatToEatStep {
-        case bubbles, time, cuisine, category, results
+        case time, cuisine, category, results
     }
 
     var body: some View {
@@ -21,14 +21,6 @@ struct WhatToEatView: View {
             DS.cream.ignoresSafeArea()
 
             switch step {
-            case .bubbles:
-                BubbleGameView(selected: $selectedIngredients) {
-                    withAnimation(.spring(response: 0.2)) {
-                        step = .time
-                    }
-                }
-                .transition(.move(edge: .trailing))
-
             case .time:
                 TimeSelectionView(selectedTime: $selectedTime) {
                     withAnimation(.spring(response: 0.2)) {
@@ -55,7 +47,7 @@ struct WhatToEatView: View {
 
             case .results:
                 SwipeResultsView(
-                    ingredients: selectedIngredients,
+                    ingredients: pantryIngredients,
                     time: selectedTime,
                     cuisine: selectedCuisine,
                     category: selectedCategory
@@ -70,6 +62,11 @@ struct WhatToEatView: View {
                     .padding(.leading, 16)
                     .padding(.top, 8)
             }
+        }
+        .task {
+            guard let userId = Clerk.shared.user?.id else { return }
+            let items = await APIService.fetchPantry(userId: userId)
+            pantryIngredients = Set(items.map { $0.ingredient_name })
         }
     }
 }
