@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import ClerkKit
 import ClerkKitUI
 
@@ -18,9 +19,11 @@ struct ModeSelectionView: View {
     @State private var showMealPrepWizard = false
     @State private var showAccountSheet = false
     @State private var pantryCount = 0
+    @State private var recipeCount = 0
     @State private var showPantryGate = false
     @State private var pendingMode: AppMode?
     @EnvironmentObject var subscription: SubscriptionService
+    @Environment(\.modelContext) private var modelContext
 
     private let minPantryCount = 30
 
@@ -81,94 +84,131 @@ struct ModeSelectionView: View {
             ZStack {
                 DS.cream.ignoresSafeArea()
 
-                VStack(spacing: 24) {
-                    HStack {
-                        Spacer()
-                        Button { showAccountSheet = true } label: {
-                            if let url = Clerk.shared.user?.imageUrl,
-                               let imageURL = URL(string: url) {
-                                AsyncImage(url: imageURL) { image in
-                                    image.resizable().scaledToFill()
-                                } placeholder: {
-                                    Image(systemName: "person.circle.fill")
-                                        .font(.system(size: 28))
-                                        .foregroundStyle(DS.smoke)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        // Greeting + avatar
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("İyi akşamlar,")
+                                    .font(.handwritten())
+                                    .foregroundStyle(DS.dust)
+
+                                Text("Merhaba, \(Clerk.shared.user?.firstName ?? "Neslihan")")
+                                    .font(.displayLarge())
+                                    .foregroundStyle(DS.ink)
+                            }
+
+                            Spacer()
+
+                            Button { showAccountSheet = true } label: {
+                                if let url = Clerk.shared.user?.imageUrl,
+                                   let imageURL = URL(string: url) {
+                                    AsyncImage(url: imageURL) { image in
+                                        image.resizable().scaledToFill()
+                                    } placeholder: {
+                                        avatarPlaceholder
+                                    }
+                                    .frame(width: 46, height: 46)
+                                    .clipShape(Circle())
+                                } else {
+                                    avatarPlaceholder
                                 }
-                                .frame(width: 36, height: 36)
-                                .clipShape(Circle())
-                            } else {
-                                Image(systemName: "person.circle.fill")
-                                    .font(.system(size: 28))
-                                    .foregroundStyle(DS.smoke)
-                                    .frame(width: 36, height: 36)
                             }
                         }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 16)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                        .padding(.bottom, 18)
 
-                    VStack(spacing: 8) {
+                        // Mode cards
+                        VStack(spacing: 12) {
+                            ModeCard(
+                                icon: "calendar",
+                                title: "Haftalık Plan",
+                                subtitle: "Bir haftalık yemek planı hazırla",
+                                premium: true
+                            )
+                            .opacity(cardsVisible ? 1 : 0)
+                            .offset(y: cardsVisible ? 0 : 20)
+                            .onTapGesture {
+                                if subscription.currentPlan.canMealPrep {
+                                    navigateOrGate(.mealPrep)
+                                } else {
+                                    showPaywall = true
+                                }
+                            }
 
-                        Text("Bir mod seç ve başla")
-                            .font(.bodyText())
-                            .foregroundStyle(DS.smoke)
-                    }
+                            ModeCard(
+                                icon: "wand.and.stars",
+                                title: "Ne Yesem?",
+                                subtitle: "Sana özel tarif önerileri keşfet"
+                            )
+                            .opacity(cardsVisible ? 1 : 0)
+                            .offset(y: cardsVisible ? 0 : 20)
+                            .onTapGesture {
+                                navigateOrGate(.whatToEat)
+                            }
 
-                    VStack(spacing: 12) {
-                        ModeCard(
-                            icon: "calendar",
-                            title: "Meal Prep",
-                            subtitle: "Haftalık yemek planı oluştur"
-                        )
-                        .opacity(cardsVisible ? 1 : 0)
-                        .offset(y: cardsVisible ? 0 : 20)
-                        .onTapGesture {
-                            if subscription.currentPlan.canMealPrep {
-                                navigateOrGate(.mealPrep)
-                            } else {
-                                showPaywall = true
+                            ModeCard(
+                                icon: "book.closed.fill",
+                                title: "Tariflerim",
+                                subtitle: "Kaydettiğin tüm tarifler"
+                            )
+                            .opacity(cardsVisible ? 1 : 0)
+                            .offset(y: cardsVisible ? 0 : 20)
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.2)) {
+                                    selectedMode = .browse
+                                }
+                            }
+
+                            ModeCard(
+                                icon: "cabinet.fill",
+                                title: "Kilerim",
+                                subtitle: "Evdeki malzemeleri takip et"
+                            )
+                            .opacity(cardsVisible ? 1 : 0)
+                            .offset(y: cardsVisible ? 0 : 20)
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.2)) {
+                                    selectedMode = .pantry
+                                }
+                            }
+
+                            ModeCard(
+                                icon: "basket.fill",
+                                title: "Alışveriş Listesi",
+                                subtitle: "Eksikleri tek listede topla"
+                            )
+                            .opacity(cardsVisible ? 1 : 0)
+                            .offset(y: cardsVisible ? 0 : 20)
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.2)) {
+                                    selectedMode = .shoppingList
+                                }
                             }
                         }
+                        .padding(.horizontal, 20)
 
-                        ModeCard(
-                            icon: "sparkles",
-                            title: "Ne Yesem?",
-                            subtitle: "Malzemelerine göre tarif bul"
-                        )
-                        .opacity(cardsVisible ? 1 : 0)
-                        .offset(y: cardsVisible ? 0 : 20)
-                        .onTapGesture {
-                            navigateOrGate(.whatToEat)
+                        // Stats row
+                        HStack(spacing: 12) {
+                            StatCard(value: "\(recipeCount)", label: "kayıtlı tarif", color: DS.ember)
+                            StatCard(value: "\(pantryCount)", label: "kilerinde malzeme", color: DS.terracotta)
                         }
-
-                        ModeCard(
-                            icon: "book",
-                            title: "Tariflerim",
-                            subtitle: "Kaydettiğin tariflere göz at"
-                        )
-                        .opacity(cardsVisible ? 1 : 0)
-                        .offset(y: cardsVisible ? 0 : 20)
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.2)) {
-                                selectedMode = .browse
-                            }
-                        }
-
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+                        .padding(.bottom, 80)
                     }
-                    .padding(.horizontal, 20)
-
-                    Spacer()
                 }
             }
             .overlay(alignment: .bottom) {
                 Button(action: { showAddRecipe = true }) {
                     Image(systemName: "plus")
                         .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(DS.cream)
+                        .foregroundStyle(DS.flour)
                         .frame(width: 56, height: 56)
                         .background(DS.ember)
                         .clipShape(Circle())
-                        .shadow(color: DS.ember.opacity(0.3), radius: 8, y: 4)
+                        .shadow(color: DS.shadowButton, radius: 8, y: 4)
                 }
                 .padding(.bottom, 24)
             }
@@ -198,6 +238,8 @@ struct ModeSelectionView: View {
             }
             .task {
                 await refreshPantryCount()
+                let descriptor = FetchDescriptor<Recipe>()
+                recipeCount = (try? modelContext.fetchCount(descriptor)) ?? 0
             }
             .fullScreenCover(isPresented: $showPantryGate) {
                 PantryGateView(
@@ -218,6 +260,42 @@ struct ModeSelectionView: View {
                 )
             }
         }
+    }
+
+    private var avatarPlaceholder: some View {
+        Text(String(Clerk.shared.user?.firstName?.prefix(1) ?? "N"))
+            .font(.system(size: 18, weight: .bold, design: .rounded))
+            .foregroundStyle(DS.flour)
+            .frame(width: 46, height: 46)
+            .background(
+                LinearGradient(colors: [DS.terracotta, DS.honey], startPoint: .topLeading, endPoint: .bottomTrailing)
+            )
+            .clipShape(Circle())
+    }
+}
+
+// MARK: - Stat Card
+
+private struct StatCard: View {
+    let value: String
+    let label: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.system(size: 24, weight: .semibold, design: .serif))
+                .foregroundStyle(color)
+
+            Text(label)
+                .font(.captionText())
+                .foregroundStyle(DS.dust)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(DS.flour)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .shadow(color: DS.shadowCard, radius: 4, y: 2)
     }
 }
 
@@ -340,37 +418,61 @@ private struct ModeCard: View {
     let icon: String
     let title: String
     let subtitle: String
+    var premium: Bool = false
 
     @State private var isPressed = false
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 22, weight: .medium))
+                .font(.system(size: 24, weight: .medium))
                 .foregroundStyle(DS.ember)
-                .frame(width: 48, height: 48)
-                .background(DS.emberLight)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .frame(width: 50, height: 50)
+                .background(DS.cream)
+                .clipShape(RoundedRectangle(cornerRadius: 13))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.sectionHeader())
-                    .foregroundStyle(DS.ink)
+                HStack(spacing: 7) {
+                    Text(title)
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(DS.ink)
+
+                    if premium {
+                        HStack(spacing: 3) {
+                            Image(systemName: "crown.fill")
+                                .font(.system(size: 10))
+                            Text("PLUS")
+                                .font(.system(size: 10, weight: .heavy))
+                                .tracking(0.4)
+                        }
+                        .foregroundStyle(DS.terracotta)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(DS.terracotta.opacity(0.14))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                }
 
                 Text(subtitle)
-                    .font(.label())
+                    .font(.system(size: 13.5, weight: .regular))
                     .foregroundStyle(DS.smoke)
+                    .lineLimit(1)
             }
 
             Spacer()
 
             Image(systemName: "chevron.right")
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(DS.dust)
         }
         .padding(16)
         .background(DS.sand)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(DS.stone, lineWidth: 1)
+        )
+        .shadow(color: DS.shadowCard, radius: 4, y: 2)
         .scaleEffect(isPressed ? 0.97 : 1.0)
         .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
             withAnimation(.easeOut(duration: 0.15)) {

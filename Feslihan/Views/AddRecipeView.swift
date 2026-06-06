@@ -71,62 +71,70 @@ struct AddRecipeView: View {
             DS.cream.ignoresSafeArea()
 
             ScrollView {
-                VStack(spacing: 24) {
-                    Image(systemName: "link")
-                        .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(DS.ember)
-                        .frame(width: 56, height: 56)
-                        .background(DS.emberLight)
-                        .clipShape(Circle())
-                        .padding(.top, 24)
-
-                    VStack(spacing: 8) {
-                        Text("Video Linki Ekle")
-                            .font(.displayTitle())
+                VStack(spacing: 20) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Tarif Ekle")
+                            .font(.system(size: 26, weight: .semibold, design: .serif))
                             .foregroundStyle(DS.ink)
 
-                        Text("TikTok, Instagram veya X'ten tarif videosu linkini yapıştırın")
+                        Text("Bir video linki yapıştır, tarifi senin için çıkaralım.")
                             .font(.bodyText())
                             .foregroundStyle(DS.smoke)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 20)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Video URL")
-                            .font(.label())
-                            .foregroundStyle(DS.ink)
-
-                        TextField("https://www.tiktok.com/@user/video/...", text: $urlText)
+                    // URL input + paste button
+                    HStack(spacing: 8) {
+                        TextField("tiktok.com/@…/video/72…", text: $urlText)
                             .textContentType(.URL)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                             .font(.bodyText())
                             .padding(14)
                             .background(DS.sand)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 8)
+                                RoundedRectangle(cornerRadius: 10)
                                     .stroke(DS.stone, lineWidth: 1)
                             )
+
+                        Button {
+                            if let clip = UIPasteboard.general.string {
+                                urlText = clip
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "doc.on.clipboard")
+                                    .font(.system(size: 14))
+                                Text("Yapıştır")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                            .foregroundStyle(DS.ember)
+                            .padding(.horizontal, 16)
+                            .frame(height: 46)
+                            .background(DS.emberLight)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
                     }
                     .padding(.horizontal, 20)
 
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Desteklenen Platformlar")
-                            .font(.label())
-                            .foregroundStyle(DS.ink)
+                    // Platform icons
+                    HStack(spacing: 10) {
+                        Text("Desteklenen:")
+                            .font(.captionText())
+                            .foregroundStyle(DS.dust)
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            platformRow("TikTok")
-                            platformRow("Instagram Reels")
-                            platformRow("X (Twitter)")
+                        ForEach(["♪", "◎", "𝕏"], id: \.self) { glyph in
+                            Text(glyph)
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(DS.smoke)
+                                .frame(width: 36, height: 36)
+                                .background(DS.sand)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
                     }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(DS.sand)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
                     .padding(.horizontal, 20)
 
                     Button(action: processAll) {
@@ -134,31 +142,15 @@ struct AddRecipeView: View {
                             .font(.buttonFont())
                             .frame(maxWidth: .infinity)
                             .frame(height: 50)
-                            .background(canProcess ? DS.ember : DS.ember.opacity(0.4))
-                            .foregroundStyle(DS.cream)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .background(canProcess ? DS.ember : DS.stone)
+                            .foregroundStyle(canProcess ? DS.flour : DS.dust)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .shadow(color: canProcess ? DS.shadowButton : .clear, radius: 8, y: 4)
                     }
                     .disabled(!canProcess)
                     .padding(.horizontal, 20)
-
-                    Text("Video içeriği AI ile transkript edilir ve Türkçe tarif kartına dönüştürülür. İşlem 30-60 saniye sürer.")
-                        .font(.captionText())
-                        .foregroundStyle(DS.dust)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-                        .padding(.bottom, 24)
                 }
             }
-        }
-    }
-
-    private func platformRow(_ name: String) -> some View {
-        HStack(spacing: 8) {
-            Text("•")
-                .foregroundStyle(DS.smoke)
-            Text(name)
-                .font(.bodyText())
-                .foregroundStyle(DS.ink)
         }
     }
 
@@ -167,21 +159,100 @@ struct AddRecipeView: View {
     private var processingView: some View {
         ZStack {
             DS.cream.ignoresSafeArea()
-            VStack(spacing: 16) {
-                Spacer()
-                ProgressView()
-                    .scaleEffect(1.3)
-                Text(statusText)
-                    .font(.sectionHeader())
-                    .foregroundStyle(DS.ink)
-                Text(statusDescription)
-                    .font(.bodyText())
+
+            VStack(spacing: 20) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Tarif Ekle")
+                        .font(.system(size: 26, weight: .semibold, design: .serif))
+                        .foregroundStyle(DS.ink)
+
+                    Text("Bir video linki yapıştır, tarifi senin için çıkaralım.")
+                        .font(.bodyText())
+                        .foregroundStyle(DS.smoke)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Processing checklist card
+                VStack(spacing: 0) {
+                    checklistRow("Video bilgileri", state: checkState(for: .fetchingCaption))
+                    Divider().background(DS.stone)
+                    checklistRow("Ses çıkartma", state: checkState(for: .extractingAudio))
+                    Divider().background(DS.stone)
+                    checklistRow("Yazı çevirme", state: checkState(for: .transcribing))
+                    Divider().background(DS.stone)
+                    checklistRow("Tarif analizi", state: checkState(for: .analyzingRecipe))
+                }
+                .background(DS.flour)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .shadow(color: DS.shadowCard, radius: 4, y: 2)
+
+                Text("Bir dakika sürmez, ocağı yakmaya hazırlan…")
+                    .font(.handwritten())
                     .foregroundStyle(DS.smoke)
-                    .multilineTextAlignment(.center)
+                    .padding(.top, 8)
+
                 Spacer()
+
+                Button {} label: {
+                    Text("İşleniyor…")
+                        .font(.buttonFont())
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(DS.stone)
+                        .foregroundStyle(DS.dust)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .disabled(true)
             }
-            .padding()
+            .padding(20)
         }
+    }
+
+    private enum CheckState { case done, active, waiting }
+
+    private func checkState(for step: ProcessingState) -> CheckState {
+        let order: [ProcessingState] = [.fetchingCaption, .extractingAudio, .transcribing, .analyzingRecipe]
+        guard let targetIdx = order.firstIndex(of: step),
+              let currentIdx = order.firstIndex(of: processingState) else { return .waiting }
+        if targetIdx < currentIdx { return .done }
+        if targetIdx == currentIdx { return .active }
+        return .waiting
+    }
+
+    @ViewBuilder
+    private func checklistRow(_ label: String, state: CheckState) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(state == .done ? DS.ember : state == .active ? DS.emberLight : DS.sand)
+                    .frame(width: 26, height: 26)
+
+                if state == .done {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(DS.flour)
+                } else if state == .active {
+                    Circle()
+                        .fill(DS.ember)
+                        .frame(width: 9, height: 9)
+                }
+            }
+
+            Text(label)
+                .font(.bodyText())
+                .foregroundStyle(state == .waiting ? DS.dust : DS.ink)
+                .fontWeight(state == .active ? .bold : .regular)
+
+            Spacer()
+
+            if state == .done {
+                Text("tamam")
+                    .font(.captionText())
+                    .foregroundStyle(DS.ember)
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 46)
     }
 
     // MARK: - Result View
@@ -350,15 +421,29 @@ struct AddRecipeView: View {
                 }
 
                 processingState = .fetchingCaption
-                guard let captionResult = try? await CaptionService.fetchCaption(from: trimmedURL),
-                      !captionResult.caption.isEmpty else {
-                    throw FeslihanError.noInputProvided
+                let captionResult = try await CaptionService.fetchCaption(from: trimmedURL)
+                guard !captionResult.caption.isEmpty else {
+                    throw FeslihanError.captionFetchFailed
+                }
+
+                // Try to extract audio from the video for transcription
+                var audioData: Data?
+                processingState = .extractingAudio
+                if let videoURL = URL(string: trimmedURL) {
+                    do {
+                        let audioURL = try await AudioExtractor.extractAudio(from: videoURL)
+                        audioData = try Data(contentsOf: audioURL)
+                        try? FileManager.default.removeItem(at: audioURL)
+                    } catch {
+                        print("[Audio] Extraction failed, continuing without audio: \(error)")
+                    }
                 }
 
                 processingState = .analyzingRecipe
                 let recipe = try await ClaudeService.analyzeRecipe(
                     transcription: "",
-                    caption: captionResult.caption
+                    caption: captionResult.caption,
+                    audio: audioData
                 )
 
                 var dto = RecipeDTO.from(

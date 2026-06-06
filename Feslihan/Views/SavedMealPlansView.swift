@@ -36,7 +36,7 @@ struct SavedMealPlansView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Kayıtlı Planlar")
-                                .font(.system(size: 28, weight: .bold, design: .rounded))
+                                .font(.system(size: 30, weight: .semibold, design: .serif))
                                 .foregroundStyle(DS.ink)
 
                             Text("\(plans.count) yemek planı")

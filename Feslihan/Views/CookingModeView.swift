@@ -17,25 +17,21 @@ struct CookingModeView: View {
             VStack(spacing: 0) {
                 // Top bar
                 HStack {
+                    Text("ADIM \(currentIndex + 1) / \(steps.count)")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .tracking(0.4)
+                        .foregroundStyle(.white.opacity(0.55))
+
+                    Spacer()
+
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 40, height: 40)
-                            .background(.white.opacity(0.15))
+                            .foregroundStyle(.white.opacity(0.8))
+                            .frame(width: 38, height: 38)
+                            .background(.white.opacity(0.12))
                             .clipShape(Circle())
                     }
-
-                    Spacer()
-
-                    Text("\(currentIndex + 1) / \(steps.count)")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.7))
-
-                    Spacer()
-
-                    // Invisible spacer to center the counter
-                    Color.clear.frame(width: 40, height: 40)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
@@ -45,17 +41,17 @@ struct CookingModeView: View {
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 3)
                             .fill(.white.opacity(0.15))
-                            .frame(height: 4)
+                            .frame(height: 5)
 
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(DS.pine)
-                            .frame(width: geo.size.width * CGFloat(currentIndex + 1) / CGFloat(steps.count), height: 4)
+                            .fill(DS.emberLight)
+                            .frame(width: geo.size.width * CGFloat(currentIndex + 1) / CGFloat(steps.count), height: 5)
                             .animation(.easeInOut(duration: 0.3), value: currentIndex)
                     }
                 }
-                .frame(height: 4)
+                .frame(height: 5)
                 .padding(.horizontal, 20)
-                .padding(.top, 16)
+                .padding(.top, 14)
 
                 Spacer()
 
@@ -65,12 +61,18 @@ struct CookingModeView: View {
                         VStack(spacing: 24) {
                             Spacer()
 
+                            // Recipe name
+                            Text(title)
+                                .font(.system(size: 15, weight: .regular, design: .serif))
+                                .italic()
+                                .foregroundStyle(DS.honey)
+
                             Text(step.text)
-                                .font(.system(size: 24, weight: .medium))
+                                .font(.system(size: 24, weight: .semibold, design: .rounded))
                                 .foregroundStyle(.white)
                                 .multilineTextAlignment(.center)
-                                .lineSpacing(8)
-                                .padding(.horizontal, 24)
+                                .lineSpacing(10)
+                                .padding(.horizontal, 34)
 
                             // Timer button if step has a duration
                             if let duration = step.timerDuration {
@@ -85,16 +87,21 @@ struct CookingModeView: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
 
                 // Navigation buttons
-                HStack(spacing: 16) {
+                HStack(spacing: 12) {
                     Button {
                         withAnimation { currentIndex = max(0, currentIndex - 1) }
                     } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .semibold))
-                            .frame(width: 56, height: 56)
-                            .foregroundStyle(currentIndex > 0 ? .white : .white.opacity(0.3))
-                            .background(.white.opacity(currentIndex > 0 ? 0.15 : 0.05))
-                            .clipShape(Circle())
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Önceki")
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .foregroundStyle(currentIndex > 0 ? .white.opacity(0.9) : .white.opacity(0.3))
+                        .background(.white.opacity(currentIndex > 0 ? 0.12 : 0.05))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .disabled(currentIndex == 0)
 
@@ -103,24 +110,28 @@ struct CookingModeView: View {
                             dismiss()
                         } label: {
                             Text("Tamamlandı")
-                                .font(.system(size: 17, weight: .bold))
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 56)
+                                .frame(height: 50)
                                 .foregroundStyle(DS.emberDark)
-                                .background(DS.pine)
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .background(DS.emberLight)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
                     } else {
                         Button {
                             withAnimation { currentIndex += 1 }
                         } label: {
-                            Text("Sonraki")
-                                .font(.system(size: 17, weight: .bold))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 56)
-                                .foregroundStyle(.white)
-                                .background(.white.opacity(0.15))
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                            HStack(spacing: 6) {
+                                Text("Sonraki")
+                                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .foregroundStyle(DS.emberDark)
+                            .background(DS.emberLight)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
                     }
                 }
@@ -160,22 +171,23 @@ struct CookingModeView: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: timerActive && isThisStep ? "pause.circle.fill" : "timer")
-                    .font(.system(size: 22))
+                    .font(.system(size: 20))
 
                 if timerActive && isThisStep && timerRemaining > 0 {
                     Text(formatTimer(timerRemaining))
-                        .font(.system(size: 28, weight: .bold, design: .monospaced))
+                        .font(.system(size: 22, weight: .heavy, design: .monospaced))
                         .contentTransition(.numericText())
                 } else {
                     Text(formatTimer(duration))
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        .font(.system(size: 22, weight: .heavy, design: .rounded))
                 }
             }
-            .foregroundStyle(timerActive && isThisStep ? DS.emberDark : .white)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 14)
-            .background(timerActive && isThisStep ? DS.pine : .white.opacity(0.15))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 12)
+            .background(DS.terracotta)
             .clipShape(Capsule())
+            .shadow(color: DS.terracotta.opacity(0.35), radius: 8, y: 4)
         }
     }
 
@@ -209,7 +221,6 @@ extension CookingStep {
         // Split by numbered prefixes: "1.", "2.", etc.
         let pattern = #"(?:^|\n)\s*(\d+)\.\s*"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
-            // Fallback: split by newlines
             return instructions
                 .components(separatedBy: "\n")
                 .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }

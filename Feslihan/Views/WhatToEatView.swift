@@ -618,39 +618,54 @@ struct TimeSelectionView: View {
             Spacer()
 
             VStack(spacing: 8) {
-                Image(systemName: "clock")
-                    .font(.system(size: 36, weight: .medium))
-                    .foregroundStyle(DS.ember)
-
                 Text("Ne kadar vaktin var?")
-                    .font(.displayTitle())
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
                     .foregroundStyle(DS.ink)
+
+                Text("Sana uygun tarifleri ona göre seçelim.")
+                    .font(.bodyText())
+                    .foregroundStyle(DS.smoke)
             }
 
-            VStack(spacing: 8) {
+            VStack(spacing: 11) {
                 ForEach(Array(CookingTime.allCases.enumerated()), id: \.element) { index, time in
                     Button {
                         selectedTime = time
                     } label: {
-                        HStack(spacing: 14) {
+                        HStack(spacing: 13) {
                             Image(systemName: time.icon)
                                 .font(.system(size: 20, weight: .medium))
-                                .frame(width: 32)
+                                .foregroundStyle(DS.ember)
+                                .frame(width: 42, height: 42)
+                                .background(selectedTime == time ? DS.flour : DS.sand)
+                                .clipShape(RoundedRectangle(cornerRadius: 11))
 
                             Text(time.rawValue)
-                                .font(.sectionHeader())
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .foregroundStyle(DS.ink)
 
                             Spacer()
 
-                            if selectedTime == time {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 14, weight: .medium))
-                            }
+                            Circle()
+                                .fill(selectedTime == time ? DS.ember : .clear)
+                                .frame(width: 24, height: 24)
+                                .overlay(
+                                    Circle().stroke(selectedTime == time ? .clear : DS.stone, lineWidth: 1.5)
+                                )
+                                .overlay(
+                                    selectedTime == time ?
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(DS.flour) : nil
+                                )
                         }
                         .padding(16)
-                        .foregroundStyle(selectedTime == time ? DS.cream : DS.ink)
-                        .background(selectedTime == time ? DS.ember : DS.sand)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .background(selectedTime == time ? DS.emberLight : DS.flour)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(selectedTime == time ? DS.ember : DS.stone, lineWidth: 1.5)
+                        )
                     }
                     .offset(y: appeared ? 0 : 20)
                     .opacity(appeared ? 1 : 0)
@@ -810,7 +825,7 @@ struct SwipeResultsView: View {
                 VStack(spacing: 16) {
                     Image(systemName: "checkmark.circle")
                         .font(.system(size: 44, weight: .medium))
-                        .foregroundStyle(DS.pine)
+                        .foregroundStyle(DS.ember)
 
                     Text("Hepsi bu kadar!")
                         .font(.displayTitle())

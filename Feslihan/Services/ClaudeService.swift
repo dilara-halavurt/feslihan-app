@@ -25,7 +25,7 @@ struct ProcessedRecipe {
 }
 
 enum ClaudeService {
-    static func analyzeRecipe(transcription: String, caption: String = "", frames: [Data] = [], coverImage: Data? = nil) async throws -> ProcessedRecipe {
+    static func analyzeRecipe(transcription: String, caption: String = "", frames: [Data] = [], coverImage: Data? = nil, audio: Data? = nil) async throws -> ProcessedRecipe {
         var body: [String: Any] = [
             "caption": caption,
             "transcription": transcription,
@@ -33,6 +33,9 @@ enum ClaudeService {
         ]
         if let coverImage {
             body["cover_image"] = coverImage.base64EncodedString()
+        }
+        if let audio {
+            body["audio"] = audio.base64EncodedString()
         }
 
         guard let url = URL(string: "\(APIService.baseURL)/ai/analyze") else {

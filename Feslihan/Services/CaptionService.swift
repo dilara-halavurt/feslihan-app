@@ -21,6 +21,8 @@ enum CaptionService {
             "https://www.tiktok.com/oembed?url=\(encodedURL)"
         } else if host.contains("twitter") || host.contains("x.com") {
             "https://publish.twitter.com/oembed?url=\(encodedURL)"
+        } else if host.contains("instagram") {
+            "https://api.instagram.com/oembed/?url=\(encodedURL)"
         } else {
             nil
         }
@@ -46,6 +48,15 @@ enum CaptionService {
         if let result = try? await fetchFromHTML(urlString: trimmed),
            !isGenericCaption(result.caption) {
             return result
+        }
+
+        // Instagram fallback: try /embed/ page which has lighter HTML with caption
+        if host.contains("instagram") {
+            let embedURL = trimmed.hasSuffix("/") ? trimmed + "embed/" : trimmed + "/embed/"
+            if let result = try? await fetchFromHTML(urlString: embedURL),
+               !isGenericCaption(result.caption) {
+                return result
+            }
         }
 
         throw FeslihanError.captionFetchFailed
@@ -119,7 +130,7 @@ enum CaptionService {
             .replacingOccurrences(of: "&#39;", with: "'")
 
         // Try multiple meta tag formats used by social platforms
-        let properties = ["og:description", "twitter:description", "description"]
+        let properties = ["og:description", "twitter:description", "description", "og:title", "twitter:title"]
         for prop in properties {
             if let content = extractMetaContent(from: html, attr: "property", value: prop)
                 ?? extractMetaContent(from: html, attr: "name", value: prop) {

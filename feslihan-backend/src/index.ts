@@ -330,10 +330,14 @@ async function ensureCreator(username: string | null | undefined, platform: "ins
         || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
       if (match?.[1]) {
         const picUrl = match[1].replace(/&amp;/g, "&");
-        const picRes = await fetch(picUrl);
-        if (picRes.ok) {
-          const buffer = Buffer.from(await picRes.arrayBuffer());
-          profilePictureUrl = await uploadImage(buffer.toString("base64"));
+        // Skip generic Instagram logo — real profile pics come from scontent/fbcdn CDNs
+        const isRealProfilePic = picUrl.includes("scontent") || picUrl.includes("fbcdn");
+        if (isRealProfilePic) {
+          const picRes = await fetch(picUrl);
+          if (picRes.ok) {
+            const buffer = Buffer.from(await picRes.arrayBuffer());
+            profilePictureUrl = await uploadImage(buffer.toString("base64"));
+          }
         }
       }
     } else if (platform === "tiktok") {

@@ -130,16 +130,26 @@ struct RecipeListView: View {
                 DS.cream.ignoresSafeArea()
 
                 if recipes.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "fork.knife")
-                            .font(.system(size: 44, weight: .medium))
-                            .foregroundStyle(DS.dust)
-                        Text("Henüz tarif yok")
-                            .font(.displayTitle())
+                    VStack(spacing: 16) {
+                        ZStack {
+                            Circle()
+                                .fill(DS.sand)
+                                .frame(width: 96, height: 96)
+                            Image(systemName: "fork.knife")
+                                .font(.system(size: 44, weight: .medium))
+                                .foregroundStyle(DS.dust)
+                        }
+
+                        Text("Henüz tarif eklemediniz…")
+                            .font(.system(size: 19, weight: .regular, design: .serif))
+                            .italic()
                             .foregroundStyle(DS.ink)
-                        Text("Video ekleyerek ilk tarifini oluştur")
+
+                        Text("Bir video linki yapıştır, gerisini Feslihan halletsin.")
                             .font(.bodyText())
                             .foregroundStyle(DS.smoke)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 250)
                     }
                 } else {
                     ScrollView {
@@ -330,7 +340,7 @@ struct RecipeListView: View {
                         }
                     } else {
                         Text("Tariflerim")
-                            .font(.displayTitle())
+                            .font(.system(size: 30, weight: .semibold, design: .serif))
                             .foregroundStyle(DS.ink)
                     }
                 }
@@ -639,57 +649,77 @@ private struct RecipeCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Image
-            Group {
-                if let data = recipe.thumbnailData,
-                   let uiImage = UIImage(data: data) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    ZStack {
-                        DS.stone.opacity(0.3)
-                        Image(systemName: "fork.knife")
-                            .font(.system(size: 28, weight: .medium))
-                            .foregroundStyle(DS.dust)
+            ZStack(alignment: .topTrailing) {
+                Group {
+                    if let data = recipe.thumbnailData,
+                       let uiImage = UIImage(data: data) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        ZStack {
+                            DS.stone.opacity(0.3)
+                            Image(systemName: "fork.knife")
+                                .font(.system(size: 28, weight: .medium))
+                                .foregroundStyle(DS.dust)
+                        }
                     }
                 }
+                .frame(height: 120)
+                .clipped()
+
+                // Heart badge
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(DS.tomato)
+                    .frame(width: 28, height: 28)
+                    .background(.white.opacity(0.92))
+                    .clipShape(Circle())
+                    .padding(8)
             }
-            .frame(height: 180)
-            .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: 14))
 
             // Info
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text(recipe.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 14.5, weight: .semibold, design: .rounded))
                     .foregroundStyle(DS.ink)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .frame(height: 36, alignment: .top)
 
-                HStack(spacing: 4) {
+                HStack {
                     if let minutes = recipe.cookingTimeMinutes {
-                        Image(systemName: "clock")
-                            .font(.system(size: 11))
-                        Text(minutes >= 60 ? "\(minutes / 60) sa \(minutes % 60 > 0 ? "\(minutes % 60) dk" : "")" : "\(minutes) dk")
-                            .font(.system(size: 12))
-                    } else if let likes = recipe.likesCount, likes > 0 {
-                        Image(systemName: "heart.fill")
-                            .font(.system(size: 11))
-                        Text(formatLikes(likes))
-                            .font(.system(size: 12))
-                    } else {
-                        Image(systemName: "leaf")
-                            .font(.system(size: 11))
-                        Text("\(recipe.ingredients.count) malzeme")
-                            .font(.system(size: 12))
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 11))
+                            Text(minutes >= 60 ? "\(minutes / 60) sa \(minutes % 60 > 0 ? "\(minutes % 60) dk" : "")" : "\(minutes) dk")
+                                .font(.captionText())
+                        }
+                        .foregroundStyle(DS.dust)
+                    }
+
+                    Spacer()
+
+                    // Difficulty dots
+                    if let diff = recipe.difficulty {
+                        let dots = diff == "high" ? 3 : diff == "medium" ? 2 : 1
+                        HStack(spacing: 3) {
+                            ForEach(1...3, id: \.self) { i in
+                                Circle()
+                                    .fill(i <= dots ? DS.ember : DS.stone)
+                                    .frame(width: 6, height: 6)
+                            }
+                        }
                     }
                 }
-                .foregroundStyle(DS.smoke)
             }
-            .padding(.top, 8)
-            .padding(.bottom, 4)
+            .padding(.horizontal, 11)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
         }
+        .background(DS.flour)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .shadow(color: DS.shadowCard, radius: 4, y: 2)
     }
 
     private func formatLikes(_ count: Int) -> String {

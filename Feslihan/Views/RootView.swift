@@ -18,21 +18,31 @@ struct RootView: View {
             ZStack {
                 DS.cream.ignoresSafeArea()
 
-                VStack(spacing: 28) {
+                VStack(spacing: 0) {
                     Spacer()
 
-                    VStack(spacing: 12) {
-                        Image(systemName: "leaf.circle.fill")
-                            .font(.system(size: 72, weight: .medium))
-                            .foregroundStyle(DS.ember)
+                    VStack(spacing: 20) {
+                        // Leaf icon in circle
+                        ZStack {
+                            Circle()
+                                .fill(DS.emberLight)
+                                .frame(width: 84, height: 84)
+
+                            Image(systemName: "leaf.fill")
+                                .font(.system(size: 44, weight: .medium))
+                                .foregroundStyle(DS.ember)
+                        }
 
                         Text("Feslihan")
-                            .font(.system(size: 36, weight: .bold, design: .rounded))
+                            .font(.system(size: 38, weight: .semibold, design: .serif))
                             .foregroundStyle(DS.ink)
 
-                        Text("Anne ne yesek?")
-                            .font(.system(size: 16, weight: .medium))
+                        Text("Annenin yemek defteri, her zaman cebinde.")
+                            .font(.system(size: 16, weight: .regular, design: .serif))
+                            .italic()
                             .foregroundStyle(DS.smoke)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 240)
                     }
 
                     Spacer()
@@ -42,32 +52,35 @@ struct RootView: View {
                             authIsPresented = true
                         } label: {
                             Text("Giriş Yap")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.buttonFont())
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 52)
-                                .foregroundStyle(.white)
+                                .frame(height: 50)
+                                .foregroundStyle(DS.flour)
                                 .background(DS.ember)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .shadow(color: DS.shadowButton, radius: 8, y: 4)
                         }
 
                         Button {
                             authIsPresented = true
                         } label: {
-                            Text("Hesap Oluştur")
-                                .font(.system(size: 16, weight: .semibold))
+                            Text("Kayıt Ol")
+                                .font(.buttonFont())
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 52)
-                                .foregroundStyle(DS.ink)
-                                .background(DS.sand)
+                                .frame(height: 50)
+                                .foregroundStyle(DS.ember)
+                                .background(DS.emberLight)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(DS.stone, lineWidth: 1)
-                                )
                         }
+
+                        Text("Devam ederek Kullanım Koşulları'nı\nkabul etmiş olursunuz.")
+                            .font(.captionText())
+                            .foregroundStyle(DS.dust)
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 6)
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 40)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 14)
                 }
             }
             .sheet(isPresented: $authIsPresented) {

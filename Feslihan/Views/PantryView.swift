@@ -25,11 +25,19 @@ struct PantryView: View {
                         BackButton(action: onBack)
                     }
 
-                    Spacer()
-
                     Text("Kilerim")
-                        .font(.displayTitle())
+                        .font(.system(size: 30, weight: .semibold, design: .serif))
                         .foregroundStyle(DS.ink)
+
+                    if !items.isEmpty {
+                        Text("\(items.count) malzeme")
+                            .font(.label())
+                            .foregroundStyle(DS.ember)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(DS.emberLight)
+                            .clipShape(Capsule())
+                    }
 
                     Spacer()
 
@@ -38,7 +46,7 @@ struct PantryView: View {
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(DS.cream)
+                            .foregroundStyle(DS.flour)
                             .frame(width: 36, height: 36)
                             .background(DS.ember)
                             .clipShape(Circle())
@@ -98,16 +106,6 @@ struct PantryView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .padding(.horizontal, 20)
                     .padding(.bottom, 8)
-
-                    // Count
-                    HStack {
-                        Text("\(items.count) malzeme")
-                            .font(.label())
-                            .foregroundStyle(DS.smoke)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 4)
 
                     // List
                     ScrollView {

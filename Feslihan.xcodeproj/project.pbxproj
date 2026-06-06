@@ -15,7 +15,6 @@
 		3A7C6E58826E07BEC2FA782D /* MealEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05085FE6F97FB2C1E7E27A3A /* MealEditSheet.swift */; };
 		3C189F320DF6FE39594C462F /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0476CE3A99851992669AF1 /* SplashView.swift */; };
 		40E227C1E1FEF54AA042733E /* FeslihanApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A43D2288E882550ECF0B51 /* FeslihanApp.swift */; };
-		567A5D952168319EC5BBDD66 /* WhisperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD98429E6EF1E014975C2795 /* WhisperService.swift */; };
 		571F235585E3576A29BF635D /* ClaudeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E2D9D3DE94595547334FEC3 /* ClaudeService.swift */; };
 		6350E98712F1A658086F07D8 /* SavedMealPlansView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A798F2EB0F1CF7C9232C30E /* SavedMealPlansView.swift */; };
 		69927C502E5209312F0BB057 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9CA009784BB90E49A89A1526 /* Assets.xcassets */; };
@@ -67,7 +66,6 @@
 		AB9E403FDABE3409C538DA26 /* FrameExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameExtractor.swift; sourceTree = "<group>"; };
 		BDB0AB1202DBDD7D683D7EB4 /* Movie.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Movie.swift; sourceTree = "<group>"; };
 		C78BB5E44642C36A066EAA62 /* MealPrepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealPrepView.swift; sourceTree = "<group>"; };
-		CD98429E6EF1E014975C2795 /* WhisperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperService.swift; sourceTree = "<group>"; };
 		D1E2F3A4B5C6D7E8F9A0B1C2 /* PantryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PantryView.swift; sourceTree = "<group>"; };
 		D9EE80C777D363E51DF793EF /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		DDCB2ED1E9EBB185B78FFDCC /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -126,7 +124,6 @@
 				6E2D9D3DE94595547334FEC3 /* ClaudeService.swift */,
 				AB9E403FDABE3409C538DA26 /* FrameExtractor.swift */,
 				67C8FCE73D37CA447073D5AB /* SubscriptionService.swift */,
-				CD98429E6EF1E014975C2795 /* WhisperService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -274,7 +271,6 @@
 				805E8B6A68BCAE104CB89DF4 /* SubscriptionService.swift in Sources */,
 				F457A8AFF084FC551264F3B7 /* Theme.swift in Sources */,
 				2131670AB7DC32892D6618F0 /* WhatToEatView.swift in Sources */,
-				567A5D952168319EC5BBDD66 /* WhisperService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

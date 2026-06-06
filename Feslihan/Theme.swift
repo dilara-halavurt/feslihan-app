@@ -3,24 +3,31 @@ import SwiftUI
 // MARK: - Colors
 
 enum DS {
-    // Core
-    static let cream = Color(hex: 0xFFFFFF)
-    static let sand = Color(hex: 0xF5F5F5)
-    static let stone = Color(hex: 0xE0E0E0)
+    // Backgrounds (warm paper tones)
+    static let cream = Color(hex: 0xFFF8F0)       // Aged Paper
+    static let sand = Color(hex: 0xF5EDE3)         // Linen
+    static let stone = Color(hex: 0xEDE0D0)        // Parchment
 
-    // Text
-    static let ink = Color(hex: 0x1A1A1A)
-    static let smoke = Color(hex: 0x8E8E93)
-    static let dust = Color(hex: 0xC7C7CC)
+    // Text (warm espresso tones)
+    static let ink = Color(hex: 0x2C1810)          // Espresso
+    static let smoke = Color(hex: 0x6B5244)        // Walnut
+    static let dust = Color(hex: 0xA89585)         // Oat
 
     // Accent (basil green)
-    static let ember = Color(hex: 0x2D6A4F)
-    static let emberLight = Color(hex: 0xE8F5E9)
-    static let emberDark = Color(hex: 0x1B4332)
+    static let ember = Color(hex: 0x4A7C59)        // Fresh Basil
+    static let emberLight = Color(hex: 0xE8F0E4)   // Basil Tint
+    static let emberDark = Color(hex: 0x2E4F38)    // Deep Herb
 
     // Supporting
-    static let pine = Color(hex: 0x52B788)
-    static let honey = Color(hex: 0xFF9500)
+    static let terracotta = Color(hex: 0xC67B5C)
+    static let honey = Color(hex: 0xE8A838)
+    static let tomato = Color(hex: 0xD94F3B)
+    static let flour = Color.white
+
+    // Shadows (warm cast-iron, never cold black)
+    static let shadowCard = Color(hex: 0x2C1810, opacity: 0.06)
+    static let shadowFloat = Color(hex: 0x2C1810, opacity: 0.10)
+    static let shadowButton = Color(hex: 0x4A7C59, opacity: 0.22)
 }
 
 extension Color {
@@ -44,10 +51,10 @@ struct BackButton: View {
             Image(systemName: "chevron.left")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(DS.ink)
-                .frame(width: 36, height: 36)
-                .background(.white.opacity(0.85))
+                .frame(width: 38, height: 38)
+                .background(DS.sand)
                 .clipShape(Circle())
-                .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+                .shadow(color: DS.shadowCard, radius: 4, y: 2)
         }
     }
 }
@@ -55,11 +62,22 @@ struct BackButton: View {
 // MARK: - Typography
 
 extension Font {
-    static func displayLarge() -> Font { .system(size: 32, weight: .semibold, design: .rounded) }
-    static func displayTitle() -> Font { .system(size: 22, weight: .semibold, design: .rounded) }
-    static func sectionHeader() -> Font { .system(size: 17, weight: .medium, design: .rounded) }
-    static func bodyText() -> Font { .system(size: 16, weight: .regular) }
-    static func label() -> Font { .system(size: 14, weight: .medium) }
-    static func captionText() -> Font { .system(size: 12, weight: .regular) }
-    static func buttonFont() -> Font { .system(size: 16, weight: .medium) }
+    /// Page titles — warm serif, 28pt, semibold
+    static func displayLarge() -> Font { .system(size: 28, weight: .semibold, design: .serif) }
+    /// Section titles — serif, 22pt
+    static func displayTitle() -> Font { .system(size: 22, weight: .semibold, design: .serif) }
+    /// Section headers — rounded sans, 18pt, medium
+    static func sectionHeader() -> Font { .system(size: 18, weight: .medium, design: .rounded) }
+    /// Card titles — rounded sans, 16pt, semibold
+    static func cardTitle() -> Font { .system(size: 16, weight: .semibold, design: .rounded) }
+    /// Body — system sans, 15pt, regular
+    static func bodyText() -> Font { .system(size: 15, weight: .regular) }
+    /// Labels — rounded sans, 13pt, semibold
+    static func label() -> Font { .system(size: 13, weight: .semibold, design: .rounded) }
+    /// Captions — rounded sans, 11pt
+    static func captionText() -> Font { .system(size: 11, weight: .medium, design: .rounded) }
+    /// Button text — rounded sans, 16pt, bold
+    static func buttonFont() -> Font { .system(size: 16, weight: .bold, design: .rounded) }
+    /// Handwritten / decorative — serif italic, 14pt
+    static func handwritten() -> Font { .system(size: 14, weight: .regular, design: .serif).italic() }
 }

@@ -29,8 +29,8 @@ struct ShoppingListView: View {
 
                     Spacer()
 
-                    Text("Alisveris Listesi")
-                        .font(.displayTitle())
+                    Text("Alışveriş Listesi")
+                        .font(.system(size: 30, weight: .semibold, design: .serif))
                         .foregroundStyle(DS.ink)
 
                     Spacer()

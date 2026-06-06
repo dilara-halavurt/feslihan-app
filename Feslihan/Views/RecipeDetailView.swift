@@ -87,30 +87,41 @@ struct RecipeDetailView: View {
                     // Title + meta
                     VStack(alignment: .leading, spacing: 8) {
                         Text(recipe.title)
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .font(.system(size: 28, weight: .semibold, design: .serif))
                             .foregroundStyle(DS.ink)
 
-                        HStack(spacing: 16) {
+                        HStack(spacing: 12) {
                             if let minutes = recipe.cookingTimeMinutes {
-                                Label(formatMinutes(minutes), systemImage: "clock")
+                                HStack(spacing: 4) {
+                                    Image(systemName: "clock")
+                                    Text(formatMinutes(minutes))
+                                }
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(DS.smoke)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(DS.sand)
+                                .clipShape(Capsule())
                             }
                             if let cuisine = recipe.cuisine {
-                                Label(cuisine.capitalized, systemImage: "globe")
+                                Text(cuisine.capitalized)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(DS.smoke)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(DS.sand)
+                                    .clipShape(Capsule())
                             }
-                            Label("\(recipe.ingredients.count)", systemImage: "leaf")
                         }
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(DS.smoke)
                     }
 
-                    // Tab selector
-                    HStack(spacing: 0) {
+                    // Underlined text tabs
+                    HStack(spacing: 22) {
                         tabButton(title: "Malzemeler", index: 0)
                         tabButton(title: "Yapılış", index: 1)
                         tabButton(title: "Besin", index: 2)
                     }
-                    .background(DS.sand)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(.bottom, 1)
 
                     // Tab content
                     switch selectedTab {
@@ -123,33 +134,34 @@ struct RecipeDetailView: View {
                     }
 
                     // Action buttons
-                    VStack(spacing: 10) {
+                    HStack(spacing: 10) {
                         Button { showCookingMode = true } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "flame.fill")
                                     .font(.system(size: 16))
                                 Text("Pişirmeye Başla")
-                                    .font(.system(size: 15, weight: .semibold))
+                                    .font(.buttonFont())
                             }
                             .frame(maxWidth: .infinity)
-                            .frame(height: 48)
-                            .foregroundStyle(.white)
+                            .frame(height: 50)
+                            .foregroundStyle(DS.flour)
                             .background(DS.ember)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .shadow(color: DS.shadowButton, radius: 8, y: 4)
                         }
 
                         if recipe.sourceURL != nil {
                             Button { openVideo() } label: {
                                 HStack(spacing: 8) {
-                                    Image(systemName: "play.circle.fill")
-                                        .font(.system(size: 16))
-                                    Text("Videoyu Aç")
-                                        .font(.system(size: 15, weight: .semibold))
+                                    Image(systemName: "play.fill")
+                                        .font(.system(size: 14))
+                                    Text("Video")
+                                        .font(.buttonFont())
                                 }
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 48)
-                                .foregroundStyle(DS.ink)
-                                .background(DS.sand)
+                                .frame(height: 50)
+                                .foregroundStyle(DS.ember)
+                                .background(DS.emberLight)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                         }
@@ -319,13 +331,16 @@ struct RecipeDetailView: View {
                 selectedTab = index
             }
         } label: {
-            Text(title)
-                .font(.system(size: 14, weight: .semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .foregroundStyle(selectedTab == index ? DS.cream : DS.smoke)
-                .background(selectedTab == index ? DS.ember : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+            VStack(spacing: 10) {
+                Text(title)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(selectedTab == index ? DS.ember : DS.dust)
+
+                Rectangle()
+                    .fill(selectedTab == index ? DS.ember : Color.clear)
+                    .frame(height: 2.5)
+                    .clipShape(Capsule())
+            }
         }
     }
 
@@ -346,8 +361,18 @@ struct RecipeDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                HStack(spacing: 12) {
+                    HStack(spacing: 7) {
+                        Image(systemName: "person.2.fill")
+                            .font(.system(size: 14))
+                        Text("Porsiyon")
+                            .font(.label())
+                    }
+                    .foregroundStyle(DS.smoke)
+
+                    Spacer()
+
+                    HStack(spacing: 4) {
                         ForEach(multiplierOptions, id: \.value) { option in
                             Button {
                                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -356,15 +381,18 @@ struct RecipeDetailView: View {
                             } label: {
                                 Text(option.label)
                                     .font(.system(size: 14, weight: .semibold))
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .foregroundStyle(servingMultiplier == option.value ? DS.cream : DS.ink)
-                                    .background(servingMultiplier == option.value ? DS.ink : DS.sand)
+                                    .padding(.horizontal, 11)
+                                    .padding(.vertical, 6)
+                                    .foregroundStyle(servingMultiplier == option.value ? DS.flour : DS.ink)
+                                    .background(servingMultiplier == option.value ? DS.ember : DS.flour)
                                     .clipShape(Capsule())
                             }
                         }
                     }
                 }
+                .padding(10)
+                .background(DS.sand)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
 
             // Estimated cost flip card

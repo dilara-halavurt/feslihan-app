@@ -16,6 +16,7 @@ interface AnalyzeRequest {
   transcription?: string;
   frames?: string[]; // base64 encoded images
   cover_image?: string; // base64 encoded cover/og:image (may have play icon)
+  audio?: string; // base64 encoded audio (m4a)
 }
 
 interface MealPlanRequest {
@@ -39,7 +40,10 @@ export async function analyzeRecipe(input: AnalyzeRequest) {
   if (input.transcription) {
     inputSections.push(`Ses transkripsiyonu:\n${input.transcription}`);
   }
-  if (!input.frames?.length && inputSections.length === 0) {
+  if (input.audio) {
+    inputSections.push("Videonun ses kaydi da eklenmistir. Sesteki konusmalari dinleyerek tarif detaylarini cikart.");
+  }
+  if (!input.frames?.length && !input.audio && inputSections.length === 0) {
     inputSections.push("Gorsel veya metin verisi yok.");
   }
 
@@ -133,6 +137,14 @@ Onemli kurallar:
         source: { type: "base64", media_type: "image/jpeg", data: frame },
       });
     }
+  }
+
+  // Send audio for transcription + analysis in one shot
+  if (input.audio) {
+    content.push({
+      type: "input_audio",
+      source: { type: "base64", media_type: "audio/mp4", data: input.audio },
+    } as any);
   }
 
   content.push({ type: "text", text: prompt });

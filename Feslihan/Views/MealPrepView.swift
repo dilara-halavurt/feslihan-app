@@ -308,7 +308,7 @@ private struct PeopleStepView: View {
                     .foregroundStyle(DS.ember)
 
                 Text("Kaç kişilik yemek yapıyorsun?")
-                    .font(.displayTitle())
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
                     .foregroundStyle(DS.ink)
                     .multilineTextAlignment(.center)
             }
@@ -334,9 +334,13 @@ private struct PeopleStepView: View {
                             }
                         }
                         .padding(16)
-                        .foregroundStyle(selected == count ? DS.cream : DS.ink)
-                        .background(selected == count ? DS.ember : DS.sand)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .foregroundStyle(DS.ink)
+                        .background(selected == count ? DS.emberLight : DS.flour)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(selected == count ? DS.ember : DS.stone, lineWidth: 1.5)
+                        )
                     }
                     .offset(y: appeared ? 0 : 20)
                     .opacity(appeared ? 1 : 0)
@@ -384,7 +388,7 @@ private struct MealsStepView: View {
                     .foregroundStyle(DS.ember)
 
                 Text("Günde kaç öğün?")
-                    .font(.displayTitle())
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
                     .foregroundStyle(DS.ink)
             }
 
@@ -414,9 +418,13 @@ private struct MealsStepView: View {
                             }
                         }
                         .padding(16)
-                        .foregroundStyle(selected == meal ? DS.cream : DS.ink)
-                        .background(selected == meal ? DS.ember : DS.sand)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .foregroundStyle(DS.ink)
+                        .background(selected == meal ? DS.emberLight : DS.flour)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(selected == meal ? DS.ember : DS.stone, lineWidth: 1.5)
+                        )
                     }
                     .offset(y: appeared ? 0 : 20)
                     .opacity(appeared ? 1 : 0)
@@ -469,7 +477,7 @@ private struct StyleStepView: View {
                     .foregroundStyle(DS.ember)
 
                 Text("Nasıl beslenmeyi seviyorsun?")
-                    .font(.displayTitle())
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
                     .foregroundStyle(DS.ink)
                     .multilineTextAlignment(.center)
 
@@ -497,9 +505,13 @@ private struct StyleStepView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 20)
-                        .foregroundStyle(isSelected ? DS.cream : DS.ink)
-                        .background(isSelected ? DS.ember : DS.sand)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .foregroundStyle(DS.ink)
+                        .background(isSelected ? DS.emberLight : DS.flour)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(isSelected ? DS.ember : DS.stone, lineWidth: 1.5)
+                        )
                     }
                     .scaleEffect(appeared ? 1 : 0.97)
                     .opacity(appeared ? 1 : 0)
@@ -548,7 +560,7 @@ private struct PeriodStepView: View {
                     .foregroundStyle(DS.ember)
 
                 Text("Ne kadarlık plan istiyorsun?")
-                    .font(.displayTitle())
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
                     .foregroundStyle(DS.ink)
                     .multilineTextAlignment(.center)
             }
@@ -579,9 +591,13 @@ private struct PeriodStepView: View {
                             }
                         }
                         .padding(16)
-                        .foregroundStyle(selected == p ? DS.cream : DS.ink)
-                        .background(selected == p ? DS.ember : DS.sand)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .foregroundStyle(DS.ink)
+                        .background(selected == p ? DS.emberLight : DS.flour)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(selected == p ? DS.ember : DS.stone, lineWidth: 1.5)
+                        )
                     }
                     .offset(y: appeared ? 0 : 20)
                     .opacity(appeared ? 1 : 0)
@@ -630,7 +646,7 @@ private struct KidsStepView: View {
                     .foregroundStyle(DS.ember)
 
                 Text("Çocuklar için de\nhazırlayacak mısın?")
-                    .font(.displayTitle())
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
                     .foregroundStyle(DS.ink)
                     .multilineTextAlignment(.center)
             }
@@ -655,9 +671,13 @@ private struct KidsStepView: View {
                         }
                     }
                     .padding(16)
-                    .foregroundStyle(!hasKids ? DS.cream : DS.ink)
-                    .background(!hasKids ? DS.ember : DS.sand)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .foregroundStyle(DS.ink)
+                    .background(!hasKids ? DS.emberLight : DS.flour)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(!hasKids ? DS.ember : DS.stone, lineWidth: 1.5)
+                    )
                 }
                 .offset(y: appeared ? 0 : 20)
                 .opacity(appeared ? 1 : 0)
@@ -682,9 +702,13 @@ private struct KidsStepView: View {
                         }
                     }
                     .padding(16)
-                    .foregroundStyle(hasKids ? DS.cream : DS.ink)
-                    .background(hasKids ? DS.ember : DS.sand)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .foregroundStyle(DS.ink)
+                    .background(hasKids ? DS.emberLight : DS.flour)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(hasKids ? DS.ember : DS.stone, lineWidth: 1.5)
+                    )
                 }
                 .offset(y: appeared ? 0 : 20)
                 .opacity(appeared ? 1 : 0)
@@ -763,7 +787,7 @@ private struct PrepStyleStepView: View {
                     .foregroundStyle(DS.ember)
 
                 Text("Nasıl hazırlamak istersin?")
-                    .font(.displayTitle())
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
                     .foregroundStyle(DS.ink)
                     .multilineTextAlignment(.center)
             }
@@ -794,9 +818,13 @@ private struct PrepStyleStepView: View {
                             }
                         }
                         .padding(16)
-                        .foregroundStyle(selected == style ? DS.cream : DS.ink)
-                        .background(selected == style ? DS.ember : DS.sand)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .foregroundStyle(DS.ink)
+                        .background(selected == style ? DS.emberLight : DS.flour)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(selected == style ? DS.ember : DS.stone, lineWidth: 1.5)
+                        )
                     }
                     .offset(y: appeared ? 0 : 20)
                     .opacity(appeared ? 1 : 0)
@@ -844,7 +872,7 @@ private struct BudgetStepView: View {
                     .foregroundStyle(DS.ember)
 
                 Text("Bütçen nasıl?")
-                    .font(.displayTitle())
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
                     .foregroundStyle(DS.ink)
             }
 
@@ -869,9 +897,13 @@ private struct BudgetStepView: View {
                             }
                         }
                         .padding(16)
-                        .foregroundStyle(selected == level ? DS.cream : DS.ink)
-                        .background(selected == level ? DS.ember : DS.sand)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .foregroundStyle(DS.ink)
+                        .background(selected == level ? DS.emberLight : DS.flour)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(selected == level ? DS.ember : DS.stone, lineWidth: 1.5)
+                        )
                     }
                     .offset(y: appeared ? 0 : 20)
                     .opacity(appeared ? 1 : 0)
@@ -930,7 +962,7 @@ struct MealPlanResultView: View {
             // Header
             VStack(spacing: 4) {
                 Text("Yemek Planın")
-                    .font(.displayTitle())
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
                     .foregroundStyle(DS.ink)
 
                 Text("\(period.rawValue) - \(peopleCount.rawValue)")
@@ -1020,7 +1052,7 @@ struct MealPlanResultView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
                         .foregroundStyle(.white)
-                        .background(isSaved ? DS.pine : DS.ember)
+                        .background(isSaved ? DS.emberLight : DS.ember)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .disabled(isSaved || isSaving)
