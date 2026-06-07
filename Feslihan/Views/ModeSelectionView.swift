@@ -22,6 +22,8 @@ struct ModeSelectionView: View {
     @State private var recipeCount = 0
     @State private var showPantryGate = false
     @State private var pendingMode: AppMode?
+    @State private var showOnboarding = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @EnvironmentObject var subscription: SubscriptionService
     @Environment(\.modelContext) private var modelContext
 
@@ -38,6 +40,12 @@ struct ModeSelectionView: View {
         guard let userId = Clerk.shared.user?.id else { return }
         let items = await APIService.fetchPantry(userId: userId)
         pantryCount = items.count
+    }
+
+    private func refreshCounts() async {
+        await refreshPantryCount()
+        let descriptor = FetchDescriptor<Recipe>()
+        recipeCount = (try? modelContext.fetchCount(descriptor)) ?? 0
     }
 
     private func navigateOrGate(_ mode: AppMode) {
@@ -118,6 +126,13 @@ struct ModeSelectionView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 8)
                         .padding(.bottom, 18)
+
+                        // First-run prompt leading the user to add recipes
+                        if recipeCount == 0 {
+                            AddRecipePrompt { showAddRecipe = true }
+                                .padding(.horizontal, 20)
+                                .padding(.bottom, 16)
+                        }
 
                         // Mode cards
                         VStack(spacing: 12) {
@@ -235,11 +250,19 @@ struct ModeSelectionView: View {
                 withAnimation(.easeOut(duration: 0.2).delay(0.05)) {
                     cardsVisible = true
                 }
+                if !hasCompletedOnboarding {
+                    showOnboarding = true
+                }
+            }
+            .fullScreenCover(isPresented: $showOnboarding) {
+                OnboardingView(onComplete: {
+                    hasCompletedOnboarding = true
+                    showOnboarding = false
+                    Task { await refreshCounts() }
+                })
             }
             .task {
-                await refreshPantryCount()
-                let descriptor = FetchDescriptor<Recipe>()
-                recipeCount = (try? modelContext.fetchCount(descriptor)) ?? 0
+                await refreshCounts()
             }
             .fullScreenCover(isPresented: $showPantryGate) {
                 PantryGateView(
@@ -271,6 +294,47 @@ struct ModeSelectionView: View {
                 LinearGradient(colors: [DS.terracotta, DS.honey], startPoint: .topLeading, endPoint: .bottomTrailing)
             )
             .clipShape(Circle())
+    }
+}
+
+// MARK: - Add Recipe Prompt (first-run empty state)
+
+private struct AddRecipePrompt: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(DS.ember)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("İlk tarifini ekle")
+                        .font(.cardTitle())
+                        .foregroundStyle(DS.ink)
+
+                    Text("Defterin henüz boş — hadi başlayalım!")
+                        .font(.label())
+                        .foregroundStyle(DS.smoke)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DS.dust)
+            }
+            .padding(16)
+            .background(DS.emberLight)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(DS.ember.opacity(0.25), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 
