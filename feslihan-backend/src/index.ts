@@ -2076,46 +2076,55 @@ app.post("/ai/meal-plan", async (req, res) => {
       }
     }
 
-    // For each recipe title: use existing ID or create a new recipe
-    const userId = req.body.user_id || "system";
+    // Resolve all ingredient names in one batch
+    const allIngNames = new Set<string>();
     for (const entry of allMealEntries) {
-      if (titleToId[entry.title]) continue; // already have an ID
+      for (const ing of entry.meal.ingredients ?? []) {
+        allIngNames.add(ing.charAt(0).toUpperCase() + ing.slice(1));
+      }
+    }
+    const allIngIds = await resolveIngredientIds([...allIngNames]);
 
-      const ingredientNames: string[] = (entry.meal.ingredients ?? []).map(
-        (ing: string) => ing.charAt(0).toUpperCase() + ing.slice(1)
-      );
-      const ingredientIds = await resolveIngredientIds(ingredientNames);
-      const url = `ai://meal-plan/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // Create missing recipes in one batch
+    const userId = req.body.user_id || "system";
+    const newRecipeEntries = allMealEntries.filter((e) => !titleToId[e.title]);
 
-      const [created] = await db
-        .insert(recipes)
-        .values({
-          platform: "other",
+    if (newRecipeEntries.length > 0) {
+      const newRecipeValues = newRecipeEntries.map((entry) => {
+        const ingNames: string[] = (entry.meal.ingredients ?? []).map(
+          (ing: string) => ing.charAt(0).toUpperCase() + ing.slice(1)
+        );
+        return {
+          platform: "other" as const,
           platformUser: "feslihan",
-          url,
+          url: `ai://meal-plan/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           title: entry.title,
           description: entry.meal.description ?? "",
-          ingredientsWithMeasures: ingredientNames.map((n: string) => ({ name: n, amount: "" })),
-          ingredientsWithoutMeasures: ingredientIds,
+          ingredientsWithMeasures: ingNames.map((n: string) => ({ name: n, amount: "" })),
+          ingredientsWithoutMeasures: ingNames,
           caloriesTotalKcal: entry.meal.calories ?? null,
           cookingTimeMinutes: 30,
           tags: [],
           requestedBy: userId,
-        })
-        .returning();
+        };
+      });
 
-      titleToId[entry.title] = created.id;
+      const created = await db.insert(recipes).values(newRecipeValues).returning();
 
-      // Link recipe to user
+      for (let i = 0; i < created.length; i++) {
+        titleToId[newRecipeEntries[i].title] = created[i].id;
+      }
+
+      // Link all new recipes to user in one batch
       if (req.body.user_id) {
         await db
           .insert(userRecipes)
-          .values({ userId: req.body.user_id, recipeId: created.id })
+          .values(created.map((r) => ({ userId: req.body.user_id, recipeId: r.id })))
           .onConflictDoNothing();
       }
     }
 
-    // Now build the response with real recipe IDs
+    // Build response with real recipe IDs
     const allRecipeIds: string[] = [];
     const leanDays = (result.days ?? []).map((day: any) => ({
       day_name: day.day_name,
