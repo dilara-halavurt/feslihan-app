@@ -2117,6 +2117,11 @@ app.post("/ai/meal-plan", async (req, res) => {
 
       // Link all new recipes to user
       if (req.body.user_id) {
+        // Ensure user exists
+        await db
+          .insert(users)
+          .values({ clerkId: req.body.user_id })
+          .onConflictDoNothing();
         for (const r of created) {
           try {
             await db.insert(userRecipes).values({ userId: req.body.user_id, recipeId: r.id });
