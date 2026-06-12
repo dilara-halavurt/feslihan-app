@@ -2115,12 +2115,13 @@ app.post("/ai/meal-plan", async (req, res) => {
         titleToId[newRecipeEntries[i].title] = created[i].id;
       }
 
-      // Link all new recipes to user in one batch
+      // Link all new recipes to user
       if (req.body.user_id) {
-        await db
-          .insert(userRecipes)
-          .values(created.map((r) => ({ userId: req.body.user_id, recipeId: r.id })))
-          .onConflictDoNothing();
+        for (const r of created) {
+          try {
+            await db.insert(userRecipes).values({ userId: req.body.user_id, recipeId: r.id });
+          } catch { /* ignore duplicates */ }
+        }
       }
     }
 
@@ -2148,8 +2149,8 @@ app.post("/ai/meal-plan", async (req, res) => {
       recipe_ids: allRecipeIds,
     });
   } catch (err: any) {
-    console.error("[AI MealPlan]", err.message || err);
-    res.status(500).json({ error: "Meal plan generation failed" });
+    console.error("[AI MealPlan] ERROR:", err.stack || err.message || err);
+    res.status(500).json({ error: "Meal plan generation failed", detail: err.message });
   }
 });
 
