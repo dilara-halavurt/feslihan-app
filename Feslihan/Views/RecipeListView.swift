@@ -15,6 +15,7 @@ struct RecipeListView: View {
     @State private var newFolderName = ""
     @State private var newFolderEmoji = ""
     @State private var recipeToDelete: Recipe?
+    @State private var addToPlanInfo: AddToPlanInfo?
     @State private var filters = RecipeFilters()
     @State private var showFilterSheet = false
     @State private var ingredientPriceTiers: [String: String] = [:]
@@ -255,6 +256,9 @@ struct RecipeListView: View {
                 }
             } message: {
                 Text("Bu tarif koleksiyonundan kaldırılacak. Emin misin?")
+            }
+            .sheet(item: $addToPlanInfo) { info in
+                AddToPlanSheet(info: info)
             }
             .task {
                 await syncFromBackend()
@@ -533,6 +537,11 @@ struct RecipeListView: View {
                     .buttonStyle(.plain)
                     .contextMenu {
                         folderContextMenu(for: recipe)
+                        Button {
+                            addToPlanInfo = AddToPlanInfo(title: recipe.title, sourceURL: recipe.sourceURL)
+                        } label: {
+                            Label("Plana Ekle", systemImage: "calendar.badge.plus")
+                        }
                     }
                 }
             }
@@ -560,6 +569,11 @@ struct RecipeListView: View {
                             Label("Klasörden Çıkar", systemImage: "folder.badge.minus")
                         }
                         folderContextMenu(for: recipe)
+                        Button {
+                            addToPlanInfo = AddToPlanInfo(title: recipe.title, sourceURL: recipe.sourceURL)
+                        } label: {
+                            Label("Plana Ekle", systemImage: "calendar.badge.plus")
+                        }
                     }
                 }
             }
@@ -580,6 +594,13 @@ struct RecipeListView: View {
                         RecipeCard(recipe: recipe)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button {
+                            addToPlanInfo = AddToPlanInfo(title: recipe.title, sourceURL: recipe.sourceURL)
+                        } label: {
+                            Label("Plana Ekle", systemImage: "calendar.badge.plus")
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 16)

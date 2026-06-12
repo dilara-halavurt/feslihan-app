@@ -717,3 +717,395 @@ private struct SavedPlanDetailSheet: View {
         }
     }
 }
+
+// MARK: - Add Recipe to Plan
+
+struct AddToPlanInfo: Identifiable {
+    let id = UUID()
+    let title: String
+    let sourceURL: String?
+}
+
+struct AddToPlanSheet: View {
+    let info: AddToPlanInfo
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var plans: [SavedPlanItem] = []
+    @State private var isLoading = true
+    @State private var selectedPlan: SavedPlanItem?
+    @State private var selectedDayIndex: Int?
+    @State private var selectedMealType = "Öğle"
+    @State private var isSaving = false
+    @State private var isSaved = false
+    @State private var backendRecipeId: String?
+
+    private let mealTypes: [(icon: String, label: String)] = [
+        ("sunrise.fill", "Kahvaltı"),
+        ("sun.max.fill", "Öğle"),
+        ("moon.fill", "Akşam"),
+        ("fork.knife", "Atıştırmalık"),
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                DS.cream.ignoresSafeArea()
+
+                if isLoading {
+                    ProgressView()
+                } else if isSaved {
+                    successView
+                } else if plans.isEmpty {
+                    emptyView
+                } else if selectedPlan == nil {
+                    planListView
+                } else {
+                    dayPickerView
+                }
+            }
+            .navigationTitle("Plana Ekle")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    if selectedPlan != nil && !isSaved {
+                        Button("Geri") {
+                            withAnimation { selectedPlan = nil; selectedDayIndex = nil }
+                        }
+                        .foregroundStyle(DS.ember)
+                    } else {
+                        Button("Kapat") { dismiss() }
+                            .foregroundStyle(DS.ember)
+                    }
+                }
+            }
+            .task {
+                await resolveRecipeId()
+                await loadPlans()
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    // MARK: - Empty State
+
+    private var emptyView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "calendar.badge.exclamationmark")
+                .font(.system(size: 44, weight: .medium))
+                .foregroundStyle(DS.dust)
+            Text("Henüz kayıtlı plan yok")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(DS.ink)
+            Text("Önce bir yemek planı oluştur")
+                .font(.system(size: 14))
+                .foregroundStyle(DS.smoke)
+        }
+    }
+
+    // MARK: - Success
+
+    private var successView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 56, weight: .medium))
+                .foregroundStyle(DS.ember)
+            Text("Eklendi!")
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(DS.ink)
+            Text("\"\(info.title)\" plana eklendi")
+                .font(.system(size: 15))
+                .foregroundStyle(DS.smoke)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+        }
+    }
+
+    // MARK: - Plan List
+
+    private var planListView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "fork.knife")
+                        .font(.system(size: 14))
+                        .foregroundStyle(DS.ember)
+                    Text(info.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(DS.ink)
+                        .lineLimit(1)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(DS.emberLight)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                Text("Plan Seç")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(DS.smoke)
+                    .padding(.top, 4)
+
+                ForEach(plans) { plan in
+                    Button {
+                        withAnimation(.spring(response: 0.2)) {
+                            selectedPlan = plan
+                        }
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(plan.name)
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(DS.ink)
+                                Text("\(plan.plan.days?.count ?? 0) gün · \(plan.totalMeals) öğün")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(DS.smoke)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(DS.dust)
+                        }
+                        .padding(14)
+                        .background(DS.sand)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+        }
+    }
+
+    // MARK: - Day & Meal Type Picker
+
+    private var dayPickerView: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Recipe info
+                    HStack(spacing: 8) {
+                        Image(systemName: "fork.knife")
+                            .font(.system(size: 14))
+                            .foregroundStyle(DS.ember)
+                        Text(info.title)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(DS.ink)
+                            .lineLimit(1)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(DS.emberLight)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                    // Day selector
+                    Text("Gün Seç")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(DS.smoke)
+
+                    let days = selectedPlan?.plan.days ?? []
+                    ForEach(Array(days.enumerated()), id: \.offset) { index, day in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                selectedDayIndex = index
+                            }
+                        } label: {
+                            HStack {
+                                Text(day.day_name ?? "Gün \(index + 1)")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(DS.ink)
+                                Spacer()
+                                Text("\(day.meals?.count ?? 0) öğün")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(DS.smoke)
+                                if selectedDayIndex == index {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(DS.ember)
+                                }
+                            }
+                            .padding(12)
+                            .background(selectedDayIndex == index ? DS.emberLight : DS.sand)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(selectedDayIndex == index ? DS.ember : Color.clear, lineWidth: 1.5)
+                            )
+                        }
+                    }
+
+                    // Meal type
+                    if selectedDayIndex != nil {
+                        Text("Öğün Türü")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(DS.smoke)
+                            .padding(.top, 4)
+
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                            ForEach(mealTypes, id: \.label) { type in
+                                Button {
+                                    selectedMealType = type.label
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: type.icon)
+                                            .font(.system(size: 14))
+                                        Text(type.label)
+                                            .font(.system(size: 14, weight: .medium))
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(12)
+                                    .foregroundStyle(selectedMealType == type.label ? .white : DS.ink)
+                                    .background(selectedMealType == type.label ? DS.ink : DS.sand)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 80)
+            }
+
+            // Add button
+            if selectedDayIndex != nil {
+                Button(action: { Task { await addRecipeToPlan() } }) {
+                    HStack(spacing: 8) {
+                        if isSaving {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 16))
+                            Text("Ekle")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .foregroundStyle(.white)
+                    .background(backendRecipeId != nil ? DS.ember : DS.stone)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .shadow(color: DS.shadowButton, radius: 8, y: 4)
+                }
+                .disabled(isSaving || backendRecipeId == nil)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
+                .background(DS.cream)
+            }
+        }
+    }
+
+    // MARK: - Network
+
+    private func loadPlans() async {
+        guard let userId = Clerk.shared.user?.id,
+              let url = URL(string: "\(APIService.baseURL)/users/\(userId)/meal-plans") else {
+            isLoading = false
+            return
+        }
+
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              let http = response as? HTTPURLResponse,
+              http.statusCode == 200 else {
+            isLoading = false
+            return
+        }
+
+        if let decoded = try? JSONDecoder().decode([SavedPlanItem].self, from: data) {
+            plans = decoded
+        }
+        isLoading = false
+    }
+
+    private func resolveRecipeId() async {
+        guard let userId = Clerk.shared.user?.id else { return }
+        let userRecipes = await APIService.fetchUserRecipes(userId: userId)
+
+        // Match by URL first
+        if let url = info.sourceURL {
+            let cleaned = cleanURL(url)
+            if let match = userRecipes.first(where: { cleanURL($0.url) == cleaned }) {
+                backendRecipeId = match.id
+                return
+            }
+        }
+
+        // Fallback: match by title
+        if let match = userRecipes.first(where: { $0.title == info.title }) {
+            backendRecipeId = match.id
+        }
+    }
+
+    private func addRecipeToPlan() async {
+        guard let plan = selectedPlan,
+              let dayIndex = selectedDayIndex,
+              let recipeId = backendRecipeId else { return }
+
+        isSaving = true
+        defer { if !isSaved { isSaving = false } }
+
+        var updatedDays = plan.plan.days ?? []
+        guard dayIndex < updatedDays.count else { return }
+
+        let day = updatedDays[dayIndex]
+        let newMeal = SavedPlanMeal(
+            meal_type: selectedMealType,
+            recipe_ids: [recipeId],
+            name: nil, description: nil, calories: nil, ingredients: nil
+        )
+        let updatedMeals = (day.meals ?? []) + [newMeal]
+        updatedDays[dayIndex] = SavedPlanDay(day_name: day.day_name, meals: updatedMeals)
+
+        let allRecipeIds = Array(Set(
+            updatedDays.flatMap { ($0.meals ?? []).flatMap { $0.recipe_ids ?? [] } }
+        ))
+
+        let planPayload: [String: Any] = [
+            "days": updatedDays.map { day in
+                [
+                    "day_name": day.day_name ?? "",
+                    "meals": (day.meals ?? []).map { meal in
+                        var m: [String: Any] = [
+                            "meal_type": meal.meal_type ?? "",
+                            "recipe_ids": meal.recipe_ids ?? []
+                        ]
+                        if let n = meal.name { m["name"] = n }
+                        if let d = meal.description { m["description"] = d }
+                        if let c = meal.calories { m["calories"] = c }
+                        if let i = meal.ingredients { m["ingredients"] = i }
+                        return m as [String: Any]
+                    }
+                ] as [String: Any]
+            },
+            "avg_calories_per_day": plan.plan.avg_calories_per_day ?? 0
+        ]
+
+        let body: [String: Any] = [
+            "plan": planPayload,
+            "recipe_ids": allRecipeIds
+        ]
+
+        guard let url = URL(string: "\(APIService.baseURL)/meal-plans/\(plan.id)"),
+              let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = httpBody
+
+        if let (_, response) = try? await URLSession.shared.data(for: request),
+           let http = response as? HTTPURLResponse,
+           http.statusCode == 200 {
+            withAnimation(.spring(response: 0.3)) {
+                isSaved = true
+            }
+        }
+        isSaving = false
+    }
+
+    private func cleanURL(_ urlString: String) -> String {
+        guard var components = URLComponents(string: urlString) else { return urlString }
+        components.queryItems = nil
+        components.fragment = nil
+        return components.url?.absoluteString ?? urlString
+    }
+}

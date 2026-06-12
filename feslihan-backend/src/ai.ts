@@ -352,13 +352,13 @@ SADECE aşağıdaki JSON formatında yanıt ver (başka hiçbir şey yazma):
             ]
         }
     ],
-    "shopping_list": ["1 kg tavuk göğsü", "500g pirinç", "..."],
+    "shopping_list": ["Tavuk Göğsü", "Pirinç", "Soğan", "..."],
     "avg_calories_per_day": 2000
 }
 
 Önemli:
 - Her gün için öğün sayısı ${input.meals_per_day} olmalı
-- shopping_list tüm plan için toplu alışveriş listesi olmalı (miktar dahil)
+- shopping_list tüm plan için toplu alışveriş listesi olmalı. SADECE malzeme adı yaz, miktar veya ölçü birimi EKLEME. Örnek: "Tavuk Göğsü", "Pirinç", "Soğan" — YANLIŞ: "1 kg tavuk göğsü", "2 adet soğan", "200g pirinç". İlk harf büyük, Türkçe karakterler kullan.
 - calories her öğün için tahmini kalori (birden fazla tarif varsa toplam)
 - avg_calories_per_day günlük ortalama kalori`;
 

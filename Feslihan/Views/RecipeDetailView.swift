@@ -13,6 +13,7 @@ struct RecipeDetailView: View {
     @State private var isLoadingCost = false
     @State private var backendRecipeId: String?
     @State private var userReview: UserReviewDTO?
+    @State private var showAddToPlan = false
 
     private let multiplierOptions: [(label: String, value: Double)] = [
         ("1/2x", 0.5), ("1x", 1.0), ("2x", 2.0), ("3x", 3.0), ("4x", 4.0), ("6x", 6.0)
@@ -248,28 +249,43 @@ struct RecipeDetailView: View {
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showAddToPlan) {
+            AddToPlanSheet(info: AddToPlanInfo(title: recipe.title, sourceURL: recipe.sourceURL))
+        }
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 BackButton(action: { dismiss() })
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    recipe.isFavorite.toggle()
-                    Task {
-                        if let rid = backendRecipeId,
-                           let uid = Clerk.shared.user?.id {
-                            _ = await APIService.toggleFavorite(userId: uid, recipeId: rid, isFavorite: recipe.isFavorite)
-                        }
+                HStack(spacing: 8) {
+                    Button { showAddToPlan = true } label: {
+                        Image(systemName: "calendar.badge.plus")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(DS.ink)
+                            .frame(width: 38, height: 38)
+                            .background(.white.opacity(0.85))
+                            .clipShape(Circle())
+                            .shadow(color: DS.shadowCard, radius: 4, y: 2)
                     }
-                } label: {
-                    Image(systemName: recipe.isFavorite ? "heart.fill" : "heart")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(recipe.isFavorite ? DS.tomato : DS.ink)
-                        .frame(width: 38, height: 38)
-                        .background(.white.opacity(0.85))
-                        .clipShape(Circle())
-                        .shadow(color: DS.shadowCard, radius: 4, y: 2)
+
+                    Button {
+                        recipe.isFavorite.toggle()
+                        Task {
+                            if let rid = backendRecipeId,
+                               let uid = Clerk.shared.user?.id {
+                                _ = await APIService.toggleFavorite(userId: uid, recipeId: rid, isFavorite: recipe.isFavorite)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: recipe.isFavorite ? "heart.fill" : "heart")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(recipe.isFavorite ? DS.tomato : DS.ink)
+                            .frame(width: 38, height: 38)
+                            .background(.white.opacity(0.85))
+                            .clipShape(Circle())
+                            .shadow(color: DS.shadowCard, radius: 4, y: 2)
+                    }
                 }
             }
         }

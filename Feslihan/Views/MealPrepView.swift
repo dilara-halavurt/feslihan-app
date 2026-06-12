@@ -153,6 +153,7 @@ enum BudgetLevel: String, CaseIterable {
 struct MealPrepView: View {
     var onBack: (() -> Void)?
 
+    @State private var creationMethod: PlanCreationMethod?
     @State private var step: MealPrepStep = .people
     @State private var peopleCount: PeopleCount = .two
     @State private var mealsPerDay: MealsPerDay = .three
@@ -163,6 +164,10 @@ struct MealPrepView: View {
     @State private var prepStyle: PrepStyle = .mix
     @State private var budget: BudgetLevel = .moderate
 
+    enum PlanCreationMethod {
+        case ai, manual
+    }
+
     enum MealPrepStep: CaseIterable {
         case people, meals, style, period, kids, prepStyle, budget, result
     }
@@ -171,69 +176,83 @@ struct MealPrepView: View {
         MealPrepStep.allCases.firstIndex(of: step) ?? 0
     }
 
-    private var totalSteps: Int { 7 } // excluding result
+    private var totalSteps: Int { 7 }
 
     var body: some View {
         ZStack {
             DS.cream.ignoresSafeArea()
 
-            switch step {
-            case .people:
-                PeopleStepView(selected: $peopleCount) {
-                    advance(to: .meals)
-                }
-                .transition(.move(edge: .trailing))
-
-            case .meals:
-                MealsStepView(selected: $mealsPerDay) {
-                    advance(to: .style)
-                }
-                .transition(.move(edge: .trailing))
-
-            case .style:
-                StyleStepView(selected: $eatingStyles) {
-                    advance(to: .period)
-                }
-                .transition(.move(edge: .trailing))
-
-            case .period:
-                PeriodStepView(selected: $period) {
-                    advance(to: .kids)
-                }
-                .transition(.move(edge: .trailing))
-
-            case .kids:
-                KidsStepView(hasKids: $hasKids, kidsCount: $kidsCount) {
-                    advance(to: .prepStyle)
-                }
-                .transition(.move(edge: .trailing))
-
-            case .prepStyle:
-                PrepStyleStepView(selected: $prepStyle) {
-                    advance(to: .budget)
-                }
-                .transition(.move(edge: .trailing))
-
-            case .budget:
-                BudgetStepView(selected: $budget) {
-                    advance(to: .result)
-                }
-                .transition(.move(edge: .trailing))
-
-            case .result:
-                MealPlanResultView(
-                    peopleCount: peopleCount,
-                    mealsPerDay: mealsPerDay,
-                    eatingStyles: eatingStyles,
-                    period: period,
-                    hasKids: hasKids,
-                    prepStyle: prepStyle,
-                    kidsCount: kidsCount,
-                    budget: budget
+            if creationMethod == nil {
+                MethodChoiceView(
+                    onAI: { withAnimation(.spring(response: 0.3)) { creationMethod = .ai } },
+                    onManual: { withAnimation(.spring(response: 0.3)) { creationMethod = .manual } }
                 )
-                .transition(.move(edge: .trailing))
+                .transition(.asymmetric(insertion: .opacity, removal: .move(edge: .leading)))
+            } else if creationMethod == .manual {
+                ManualMealPlanBuilder()
+                    .transition(.move(edge: .trailing))
+            } else {
+                Group {
+                    switch step {
+                    case .people:
+                        PeopleStepView(selected: $peopleCount) {
+                            advance(to: .meals)
+                        }
+                        .transition(.move(edge: .trailing))
+
+                    case .meals:
+                        MealsStepView(selected: $mealsPerDay) {
+                            advance(to: .style)
+                        }
+                        .transition(.move(edge: .trailing))
+
+                    case .style:
+                        StyleStepView(selected: $eatingStyles) {
+                            advance(to: .period)
+                        }
+                        .transition(.move(edge: .trailing))
+
+                    case .period:
+                        PeriodStepView(selected: $period) {
+                            advance(to: .kids)
+                        }
+                        .transition(.move(edge: .trailing))
+
+                    case .kids:
+                        KidsStepView(hasKids: $hasKids, kidsCount: $kidsCount) {
+                            advance(to: .prepStyle)
+                        }
+                        .transition(.move(edge: .trailing))
+
+                    case .prepStyle:
+                        PrepStyleStepView(selected: $prepStyle) {
+                            advance(to: .budget)
+                        }
+                        .transition(.move(edge: .trailing))
+
+                    case .budget:
+                        BudgetStepView(selected: $budget) {
+                            advance(to: .result)
+                        }
+                        .transition(.move(edge: .trailing))
+
+                    case .result:
+                        MealPlanResultView(
+                            peopleCount: peopleCount,
+                            mealsPerDay: mealsPerDay,
+                            eatingStyles: eatingStyles,
+                            period: period,
+                            hasKids: hasKids,
+                            prepStyle: prepStyle,
+                            kidsCount: kidsCount,
+                            budget: budget
+                        )
+                        .transition(.move(edge: .trailing))
+                    }
+                }
             }
         }
+        .animation(.spring(response: 0.3), value: creationMethod)
         .animation(.spring(response: 0.3), value: step)
         .overlay(alignment: .topLeading) {
             BackButton(action: goBack)
@@ -241,7 +260,7 @@ struct MealPrepView: View {
                 .padding(.top, 8)
         }
         .overlay(alignment: .top) {
-            if step != .result {
+            if creationMethod == .ai && step != .result {
                 ProgressBar(current: currentStepIndex, total: totalSteps)
                     .padding(.horizontal, 60)
                     .padding(.top, 16)
@@ -256,13 +275,23 @@ struct MealPrepView: View {
     }
 
     private func goBack() {
-        let steps = MealPrepStep.allCases
-        if let idx = steps.firstIndex(of: step), idx > 0 {
+        if creationMethod == nil {
+            onBack?()
+        } else if creationMethod == .manual {
             withAnimation(.spring(response: 0.3)) {
-                step = steps[idx - 1]
+                creationMethod = nil
             }
         } else {
-            onBack?()
+            let steps = MealPrepStep.allCases
+            if let idx = steps.firstIndex(of: step), idx > 0 {
+                withAnimation(.spring(response: 0.3)) {
+                    step = steps[idx - 1]
+                }
+            } else {
+                withAnimation(.spring(response: 0.3)) {
+                    creationMethod = nil
+                }
+            }
         }
     }
 }
@@ -287,6 +316,106 @@ private struct ProgressBar: View {
             }
         }
         .frame(height: 4)
+    }
+}
+
+// MARK: - Method Choice
+
+private struct MethodChoiceView: View {
+    let onAI: () -> Void
+    let onManual: () -> Void
+
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(spacing: 32) {
+            Spacer()
+
+            VStack(spacing: 8) {
+                Image(systemName: "calendar.badge.plus")
+                    .font(.system(size: 36, weight: .medium))
+                    .foregroundStyle(DS.ember)
+
+                Text("Nasıl oluşturmak istersin?")
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
+                    .foregroundStyle(DS.ink)
+                    .multilineTextAlignment(.center)
+            }
+
+            VStack(spacing: 12) {
+                Button(action: onAI) {
+                    HStack(spacing: 14) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundStyle(DS.ember)
+                            .frame(width: 40)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("AI ile Oluştur")
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                                .foregroundStyle(DS.ink)
+                            Text("Tercihlerini söyle, AI senin için plan hazırlasın")
+                                .font(.system(size: 13))
+                                .foregroundStyle(DS.smoke)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(DS.dust)
+                    }
+                    .padding(18)
+                    .background(DS.flour)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(DS.stone, lineWidth: 1.5)
+                    )
+                }
+                .offset(y: appeared ? 0 : 20)
+                .opacity(appeared ? 1 : 0)
+                .animation(.easeOut(duration: 0.3).delay(0.05), value: appeared)
+
+                Button(action: onManual) {
+                    HStack(spacing: 14) {
+                        Image(systemName: "hand.draw")
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundStyle(DS.ember)
+                            .frame(width: 40)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Manuel Oluştur")
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                                .foregroundStyle(DS.ink)
+                            Text("Tariflerini seç, kendi planını kendin kur")
+                                .font(.system(size: 13))
+                                .foregroundStyle(DS.smoke)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(DS.dust)
+                    }
+                    .padding(18)
+                    .background(DS.flour)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(DS.stone, lineWidth: 1.5)
+                    )
+                }
+                .offset(y: appeared ? 0 : 20)
+                .opacity(appeared ? 1 : 0)
+                .animation(.easeOut(duration: 0.3).delay(0.1), value: appeared)
+            }
+            .padding(.horizontal, 20)
+
+            Spacer()
+        }
+        .onAppear { appeared = true }
     }
 }
 
@@ -930,6 +1059,355 @@ private struct BudgetStepView: View {
             .padding(.bottom, 24)
         }
         .onAppear { appeared = true }
+    }
+}
+
+// MARK: - Manual Meal Plan Builder
+
+private struct ManualMealPlanBuilder: View {
+    @State private var planName = ""
+    @State private var dayCount = 7
+    @State private var days: [MealPlanDay] = []
+    @State private var userRecipes: [RecipeDTO] = []
+    @State private var recipeById: [String: RecipeDTO] = [:]
+    @State private var expandedDay: String?
+    @State private var editingMeal: MealPlanMeal?
+    @State private var addingToDayId: String?
+    @State private var newMealForDay: MealPlanMeal?
+    @State private var isSaving = false
+    @State private var isSaved = false
+    @State private var showShoppingList = false
+    @State private var isLoadingRecipes = true
+
+    private let dayCountOptions = [7, 14, 30]
+    private let turkishDays = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+
+    private var totalMeals: Int { days.flatMap(\.meals).count }
+
+    private var avgCaloriesPerDay: Int? {
+        let cals = days.flatMap { $0.meals }.flatMap { meal in
+            meal.recipeIds.compactMap { recipeById[$0]?.calories_total_kcal }
+        }
+        guard !cals.isEmpty, !days.isEmpty else { return nil }
+        return Int(cals.reduce(0, +) / Double(days.count))
+    }
+
+    private var allRecipeIds: [String] {
+        Array(Set(days.flatMap { $0.meals.flatMap(\.recipeIds) }))
+    }
+
+    private var aggregatedShoppingList: [String] {
+        struct Entry {
+            let displayName: String
+            var amounts: [String]
+        }
+        var map: [String: Entry] = [:]
+        var order: [String] = []
+
+        for day in days {
+            for meal in day.meals {
+                for recipeId in meal.recipeIds {
+                    guard let recipe = recipeById[recipeId] else { continue }
+                    for item in recipe.ingredients_with_measures {
+                        let name = (item["name"] ?? "").trimmingCharacters(in: .whitespaces)
+                        let amount = (item["amount"] ?? "").trimmingCharacters(in: .whitespaces)
+                        guard !name.isEmpty else { continue }
+                        let key = name.lowercased()
+                        if map[key] == nil {
+                            order.append(key)
+                            map[key] = Entry(displayName: name, amounts: [])
+                        }
+                        if !amount.isEmpty {
+                            map[key]!.amounts.append(amount)
+                        }
+                    }
+                }
+            }
+        }
+
+        return order.compactMap { key in
+            guard let entry = map[key] else { return nil }
+            if entry.amounts.isEmpty { return entry.displayName }
+            if entry.amounts.count == 1 { return "\(entry.amounts[0]) \(entry.displayName)" }
+            return "\(entry.amounts.joined(separator: " + ")) \(entry.displayName)"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            VStack(spacing: 4) {
+                Text("Manuel Plan")
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
+                    .foregroundStyle(DS.ink)
+                Text("Tariflerini seçerek planını oluştur")
+                    .font(.captionText())
+                    .foregroundStyle(DS.smoke)
+            }
+            .padding(.top, 50)
+            .padding(.bottom, 16)
+
+            if isLoadingRecipes {
+                Spacer()
+                ProgressView()
+                Spacer()
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Plan name
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Plan Adı")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundStyle(DS.smoke)
+                            TextField("örn. Bu Haftanın Planı", text: $planName)
+                                .font(.system(size: 16))
+                                .padding(14)
+                                .background(DS.flour)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(DS.stone, lineWidth: 1)
+                                )
+                        }
+                        .padding(.horizontal, 20)
+
+                        // Day count picker
+                        HStack(spacing: 8) {
+                            ForEach(dayCountOptions, id: \.self) { count in
+                                Button {
+                                    withAnimation(.spring(response: 0.2)) {
+                                        dayCount = count
+                                        rebuildDays()
+                                    }
+                                } label: {
+                                    Text("\(count) Gün")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .foregroundStyle(dayCount == count ? .white : DS.ink)
+                                        .background(dayCount == count ? DS.ember : DS.flour)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .stroke(dayCount == count ? DS.ember : DS.stone, lineWidth: 1)
+                                        )
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 20)
+
+                        // Summary
+                        if totalMeals > 0 {
+                            HStack(spacing: 16) {
+                                SummaryPill(icon: "fork.knife", value: "\(totalMeals)", label: "Tarif")
+                                SummaryPill(icon: "cart", value: "\(aggregatedShoppingList.count)", label: "Malzeme")
+                                if let cal = avgCaloriesPerDay {
+                                    SummaryPill(icon: "flame", value: "\(cal)", label: "kcal/gün")
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+
+                        // Days
+                        ForEach(days) { day in
+                            DayCard(
+                                day: day,
+                                recipeById: recipeById,
+                                isExpanded: expandedDay == day.id,
+                                onTap: {
+                                    withAnimation(.spring(response: 0.2)) {
+                                        expandedDay = expandedDay == day.id ? nil : day.id
+                                    }
+                                },
+                                onAddMeal: {
+                                    addingToDayId = day.id
+                                    newMealForDay = MealPlanMeal(mealType: "Öğle", recipeIds: [])
+                                },
+                                onEditMeal: { meal in
+                                    editingMeal = meal
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
+                        // Shopping list button
+                        if !aggregatedShoppingList.isEmpty {
+                            Button {
+                                showShoppingList = true
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "cart.fill")
+                                        .font(.system(size: 16))
+                                    Text("Alışveriş Listesi")
+                                        .font(.system(size: 16, weight: .semibold))
+                                    Spacer()
+                                    Text("\(aggregatedShoppingList.count) malzeme")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundStyle(DS.smoke)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(DS.dust)
+                                }
+                                .padding(16)
+                                .foregroundStyle(DS.ink)
+                                .background(DS.sand)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 20)
+                        }
+
+                        Spacer().frame(height: 20)
+                    }
+                    .padding(.top, 8)
+                    .padding(.bottom, 80)
+                }
+
+                // Save button
+                if totalMeals > 0 {
+                    Button(action: savePlan) {
+                        HStack(spacing: 8) {
+                            if isSaving {
+                                ProgressView().tint(.white)
+                            } else {
+                                Image(systemName: isSaved ? "checkmark.circle.fill" : "square.and.arrow.down")
+                                    .font(.system(size: 16))
+                                Text(isSaved ? "Kaydedildi" : "Planı Kaydet")
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .foregroundStyle(.white)
+                        .background(isSaved ? DS.emberLight : DS.ember)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .shadow(color: isSaved ? .clear : DS.shadowButton, radius: 8, y: 4)
+                    }
+                    .disabled(isSaved || isSaving)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+                    .padding(.bottom, 16)
+                    .background(DS.cream)
+                }
+            }
+        }
+        .sheet(item: $editingMeal) { meal in
+            MealEditSheet(meal: meal, userRecipes: userRecipes, recipeById: recipeById) { updated in
+                replaceMeal(meal, with: updated)
+                editingMeal = nil
+            }
+        }
+        .sheet(item: $newMealForDay) { meal in
+            MealEditSheet(meal: meal, userRecipes: userRecipes, recipeById: recipeById) { updated in
+                addNewMealToDay(updated)
+                newMealForDay = nil
+                addingToDayId = nil
+            }
+        }
+        .sheet(isPresented: $showShoppingList) {
+            ShoppingListSheet(items: aggregatedShoppingList.map { ShoppingListItem.parse($0) })
+        }
+        .task {
+            if let userId = Clerk.shared.user?.id {
+                userRecipes = await APIService.fetchUserRecipes(userId: userId)
+                var map: [String: RecipeDTO] = [:]
+                for r in userRecipes { if let id = r.id { map[id] = r } }
+                recipeById = map
+            }
+            isLoadingRecipes = false
+            rebuildDays()
+        }
+    }
+
+    private func dayName(for index: Int) -> String {
+        if dayCount <= 7 {
+            return turkishDays[index % 7]
+        } else if dayCount <= 14 {
+            let week = index / 7 + 1
+            return "Hafta \(week) - \(turkishDays[index % 7])"
+        } else {
+            return "Gün \(index + 1)"
+        }
+    }
+
+    private func rebuildDays() {
+        let existingMeals: [String: [MealPlanMeal]] = Dictionary(
+            uniqueKeysWithValues: days.compactMap { day in
+                day.meals.isEmpty ? nil : (day.id, day.meals)
+            }
+        )
+        days = (0..<dayCount).map { i in
+            let id = "day-\(i)"
+            return MealPlanDay(
+                id: id,
+                name: dayName(for: i),
+                meals: existingMeals[id] ?? []
+            )
+        }
+    }
+
+    private func replaceMeal(_ old: MealPlanMeal, with updated: MealPlanMeal) {
+        for dayIndex in days.indices {
+            if let mealIndex = days[dayIndex].meals.firstIndex(where: { $0.id == old.id }) {
+                days[dayIndex].meals[mealIndex] = updated
+                break
+            }
+        }
+    }
+
+    private func addNewMealToDay(_ meal: MealPlanMeal) {
+        guard let dayId = addingToDayId,
+              let dayIndex = days.firstIndex(where: { $0.id == dayId }) else { return }
+        guard !meal.recipeIds.isEmpty else { return }
+        days[dayIndex].meals.append(meal)
+    }
+
+    private func savePlan() {
+        isSaving = true
+        Task {
+            defer { isSaving = false }
+            guard let userId = Clerk.shared.user?.id,
+                  let url = URL(string: "\(APIService.baseURL)/meal-plans") else { return }
+
+            let name = planName.isEmpty ? "Manuel Plan - \(dayCount) Gün" : planName
+
+            let planData: [String: Any] = [
+                "days": days.map { day in
+                    [
+                        "day_name": day.name,
+                        "meals": day.meals.map { meal in
+                            [
+                                "meal_type": meal.mealType,
+                                "recipe_ids": meal.recipeIds
+                            ] as [String: Any]
+                        }
+                    ] as [String: Any]
+                },
+                "avg_calories_per_day": avgCaloriesPerDay ?? 0
+            ]
+
+            let body: [String: Any] = [
+                "user_id": userId,
+                "name": name,
+                "plan": planData,
+                "recipe_ids": allRecipeIds,
+                "shopping_list": aggregatedShoppingList,
+                "shopping_ingredient_ids": [] as [String]
+            ]
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+            if let (_, response) = try? await URLSession.shared.data(for: request),
+               let http = response as? HTTPURLResponse,
+               (200...201).contains(http.statusCode) {
+                withAnimation(.spring(response: 0.3)) {
+                    isSaved = true
+                }
+            }
+        }
     }
 }
 
