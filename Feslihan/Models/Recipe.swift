@@ -25,7 +25,7 @@ final class Recipe {
     var platform: String?
     var folderId: String?
     var freezerFriendly: Bool?
-    var isFavorite: Bool
+    var isFavorite: Bool = false
     var createdAt: Date
 
     init(

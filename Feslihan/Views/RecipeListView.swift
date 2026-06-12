@@ -341,26 +341,34 @@ struct RecipeListView: View {
         }
     }
 
+    private var isDefaultView: Bool {
+        searchText.isEmpty && selectedFolder == nil && !showTriedOnly && !showFavoritesOnly
+    }
+
     private var recipeScrollContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 searchBar
-
-                if filters.isActive {
-                    activeFiltersBar
-                }
-
-                if searchText.isEmpty && selectedFolder == nil && !showTriedOnly && !showFavoritesOnly {
-                    collectionChips
-                    foldersSection
-                    allRecipesGrid
-                } else if selectedFolder != nil {
-                    folderContentsGrid
-                } else {
-                    filteredResultsGrid
-                }
+                recipeListBody
             }
             .padding(.bottom, 80)
+        }
+    }
+
+    @ViewBuilder
+    private var recipeListBody: some View {
+        if filters.isActive {
+            activeFiltersBar
+        }
+
+        if isDefaultView {
+            collectionChips
+            foldersSection
+            allRecipesGrid
+        } else if selectedFolder != nil {
+            folderContentsGrid
+        } else {
+            filteredResultsGrid
         }
     }
 
