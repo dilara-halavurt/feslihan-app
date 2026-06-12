@@ -161,6 +161,18 @@ struct ModeSelectionView: View {
                         // Mode cards (3 primary modes)
                         VStack(spacing: 12) {
                             ModeCard(
+                                icon: "book.closed.fill",
+                                title: "Tariflerim",
+                                subtitle: "Kaydettiğin tüm tarifler"
+                            )
+                            .opacity(cardsVisible ? 1 : 0)
+                            .offset(y: cardsVisible ? 0 : 20)
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.2)) {
+                                    selectedMode = .browse
+                                }
+                            }
+                                                        ModeCard(
                                 icon: "calendar",
                                 title: "Haftalık Plan",
                                 subtitle: "Bir haftalık yemek planı hazırla",
@@ -185,19 +197,6 @@ struct ModeSelectionView: View {
                             .offset(y: cardsVisible ? 0 : 20)
                             .onTapGesture {
                                 navigateOrGate(.whatToEat)
-                            }
-
-                            ModeCard(
-                                icon: "book.closed.fill",
-                                title: "Tariflerim",
-                                subtitle: "Kaydettiğin tüm tarifler"
-                            )
-                            .opacity(cardsVisible ? 1 : 0)
-                            .offset(y: cardsVisible ? 0 : 20)
-                            .onTapGesture {
-                                withAnimation(.spring(response: 0.2)) {
-                                    selectedMode = .browse
-                                }
                             }
 
                             // Mutfak section

@@ -1937,9 +1937,67 @@ app.post("/ai/meal-plan", async (req, res) => {
     // Resolve ingredient names to IDs in the ingredients table
     const shoppingIngredientIds = await resolveIngredientIds(shoppingIngredientNames);
 
-    // Resolve recipe names to IDs, keep full data as fallback
+    // Ensure "feslihan" platform creator exists for AI-generated recipes
+    await db
+      .insert(platformCreators)
+      .values({ username: "feslihan", platform: "other", displayName: "Feslihan AI" })
+      .onConflictDoNothing();
+
+    // Collect all unique recipe titles from the AI plan
+    const allMealEntries: { title: string; meal: any }[] = [];
+    for (const day of result.days ?? []) {
+      for (const meal of day.meals ?? []) {
+        const parts = (meal.name as string).split("+").map((s: string) => s.trim());
+        for (const title of parts) {
+          if (!allMealEntries.find((e) => e.title === title)) {
+            allMealEntries.push({ title, meal });
+          }
+        }
+      }
+    }
+
+    // For each recipe title: use existing ID or create a new recipe
+    const userId = req.body.user_id || "system";
+    for (const entry of allMealEntries) {
+      if (titleToId[entry.title]) continue; // already have an ID
+
+      const ingredientNames: string[] = (entry.meal.ingredients ?? []).map(
+        (ing: string) => ing.charAt(0).toUpperCase() + ing.slice(1)
+      );
+      const ingredientIds = await resolveIngredientIds(ingredientNames);
+      const url = `ai://meal-plan/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      const [created] = await db
+        .insert(recipes)
+        .values({
+          platform: "other",
+          platformUser: "feslihan",
+          url,
+          title: entry.title,
+          description: entry.meal.description ?? "",
+          ingredientsWithMeasures: ingredientNames.map((n: string) => ({ name: n, amount: "" })),
+          ingredientsWithoutMeasures: ingredientIds,
+          caloriesTotalKcal: entry.meal.calories ?? null,
+          cookingTimeMinutes: 30,
+          tags: [],
+          requestedBy: userId,
+        })
+        .returning();
+
+      titleToId[entry.title] = created.id;
+
+      // Link recipe to user
+      if (req.body.user_id) {
+        await db
+          .insert(userRecipes)
+          .values({ userId: req.body.user_id, recipeId: created.id })
+          .onConflictDoNothing();
+      }
+    }
+
+    // Now build the response with real recipe IDs
     const allRecipeIds: string[] = [];
-    const enrichedDays = (result.days ?? []).map((day: any) => ({
+    const leanDays = (result.days ?? []).map((day: any) => ({
       day_name: day.day_name,
       meals: (day.meals ?? []).map((meal: any) => {
         const parts = (meal.name as string).split("+").map((s: string) => s.trim());
@@ -1949,23 +2007,12 @@ app.post("/ai/meal-plan", async (req, res) => {
         for (const id of ids) {
           if (!allRecipeIds.includes(id)) allRecipeIds.push(id);
         }
-        // Normalize ingredient casing
-        const ingredients = (meal.ingredients ?? []).map((ing: string) =>
-          ing.charAt(0).toUpperCase() + ing.slice(1)
-        );
-        return {
-          meal_type: meal.meal_type,
-          recipe_ids: ids,
-          name: meal.name,
-          description: meal.description,
-          calories: meal.calories,
-          ingredients,
-        };
+        return { meal_type: meal.meal_type, recipe_ids: ids };
       }),
     }));
 
     res.json({
-      days: enrichedDays,
+      days: leanDays,
       shopping_list: shoppingList,
       shopping_ingredient_ids: shoppingIngredientIds,
       avg_calories_per_day: result.avg_calories_per_day ?? null,

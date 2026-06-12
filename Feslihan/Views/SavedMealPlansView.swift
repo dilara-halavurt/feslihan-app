@@ -430,7 +430,23 @@ private struct SavedPlanDetailSheet: View {
     private var parsedShoppingList: [ShoppingListItem] {
         // New plans: shopping_list in separate DB column; old plans: inside plan JSON
         let list = plan.shopping_list ?? plan.plan.shopping_list ?? []
-        return list.map { ShoppingListItem.parse($0) }
+        if !list.isEmpty {
+            return list.map { ShoppingListItem.parse($0) }
+        }
+        // Fallback for very old plans: build from meal ingredients
+        var seen = Set<String>()
+        var items: [ShoppingListItem] = []
+        for day in days {
+            for meal in day.meals {
+                for ing in meal.fallbackIngredients ?? [] {
+                    let key = ing.lowercased()
+                    guard !seen.contains(key) else { continue }
+                    seen.insert(key)
+                    items.append(ShoppingListItem(name: ing, amount: ""))
+                }
+            }
+        }
+        return items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     // MARK: - Meal Plan Tab
