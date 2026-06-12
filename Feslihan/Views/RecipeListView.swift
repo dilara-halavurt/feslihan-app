@@ -18,6 +18,8 @@ struct RecipeListView: View {
     @State private var filters = RecipeFilters()
     @State private var showFilterSheet = false
     @State private var ingredientPriceTiers: [String: String] = [:]
+    @State private var triedRecipeIds: Set<String> = []
+    @State private var showTriedOnly = false
     @AppStorage("recipeSortOption") private var sortOptionRaw = RecipeSortOption.newest.rawValue
 
     private var sortOption: RecipeSortOption {
@@ -26,7 +28,12 @@ struct RecipeListView: View {
 
     private var filtered: [Recipe] {
         var base: [Recipe]
-        if let folder = selectedFolder {
+        if showTriedOnly {
+            base = recipes.filter { recipe in
+                guard let url = recipe.sourceURL else { return false }
+                return triedRecipeIds.contains(url)
+            }
+        } else if let folder = selectedFolder {
             base = recipes.filter { $0.folderId == folder.id }
         } else {
             base = Array(recipes)
@@ -174,7 +181,34 @@ struct RecipeListView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                             .padding(.horizontal, 16)
 
-                            if searchText.isEmpty && selectedFolder == nil {
+                            if searchText.isEmpty && selectedFolder == nil && !showTriedOnly {
+                                // Denediklerim chip
+                                Button {
+                                    showTriedOnly = true
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "checkmark.seal.fill")
+                                            .font(.system(size: 15))
+                                        Text("Denediklerim")
+                                            .font(.system(size: 15, weight: .semibold))
+                                        Spacer()
+                                        if !triedRecipeIds.isEmpty {
+                                            Text("\(triedRecipeIds.count) tarif")
+                                                .font(.system(size: 13))
+                                                .foregroundStyle(DS.smoke)
+                                        }
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(DS.dust)
+                                    }
+                                    .foregroundStyle(DS.ember)
+                                    .padding(14)
+                                    .background(DS.emberLight)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.horizontal, 16)
+
                                 // Folders section
                                 if !folders.isEmpty {
                                     VStack(alignment: .leading, spacing: 12) {
@@ -317,7 +351,13 @@ struct RecipeListView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if selectedFolder != nil {
+                if showTriedOnly {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        BackButton {
+                            showTriedOnly = false
+                        }
+                    }
+                } else if selectedFolder != nil {
                     ToolbarItem(placement: .navigationBarLeading) {
                         BackButton {
                             selectedFolder = nil
@@ -329,7 +369,11 @@ struct RecipeListView: View {
                     }
                 }
                 ToolbarItem(placement: .principal) {
-                    if let folder = selectedFolder {
+                    if showTriedOnly {
+                        Text("Denediklerim")
+                            .font(.system(size: 30, weight: .semibold, design: .serif))
+                            .foregroundStyle(DS.ink)
+                    } else if let folder = selectedFolder {
                         HStack(spacing: 6) {
                             if let emoji = folder.emoji, !emoji.isEmpty {
                                 Text(emoji)
@@ -419,6 +463,10 @@ struct RecipeListView: View {
                 await syncFromBackend()
                 await loadFolders()
                 await loadIngredientPriceTiers()
+                await loadTriedRecipes()
+            }
+            .onAppear {
+                Task { await loadTriedRecipes() }
             }
         }
     }
@@ -501,6 +549,21 @@ struct RecipeListView: View {
             }
         }
         ingredientPriceTiers = tiers
+    }
+
+    private func loadTriedRecipes() async {
+        guard let userId = Clerk.shared.user?.id else { return }
+        let reviews = await APIService.fetchUserReviews(userId: userId)
+        let reviewedIds = Set(reviews.map(\.recipe_id))
+        // Map backend recipe IDs to source URLs (which local recipes use)
+        let remoteRecipes = await APIService.fetchUserRecipes(userId: userId)
+        var urls = Set<String>()
+        for r in remoteRecipes {
+            if let id = r.id, reviewedIds.contains(id) {
+                urls.insert(r.url)
+            }
+        }
+        triedRecipeIds = urls
     }
 
     private func createFolder() async {

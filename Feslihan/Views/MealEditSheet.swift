@@ -26,6 +26,8 @@ struct MealEditSheet: View {
         ("fork.knife", "Atıştırmalık"),
     ]
 
+    private var isNewMeal: Bool { meal.name.isEmpty }
+
     init(meal: MealPlanMeal, userRecipes: [RecipeDTO], onSave: @escaping (MealPlanMeal) -> Void) {
         self.meal = meal
         self.userRecipes = userRecipes
@@ -45,12 +47,14 @@ struct MealEditSheet: View {
                     VStack(alignment: .leading, spacing: 24) {
                         // Header
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Öğün Düzenle")
+                            Text(isNewMeal ? "Öğün Ekle" : "Öğün Düzenle")
                                 .font(.system(size: 22, weight: .bold, design: .rounded))
                                 .foregroundStyle(DS.ink)
-                            Text(meal.name)
-                                .font(.system(size: 14))
-                                .foregroundStyle(DS.smoke)
+                            if !isNewMeal {
+                                Text(meal.name)
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(DS.smoke)
+                            }
                         }
 
                         // Main recipe
@@ -64,9 +68,15 @@ struct MealEditSheet: View {
                                 showRecipePicker = true
                             } label: {
                                 HStack {
-                                    Text(mainRecipeName)
-                                        .font(.system(size: 15))
-                                        .foregroundStyle(DS.ink)
+                                    if mainRecipeName.isEmpty {
+                                        Text("Tarif seç…")
+                                            .font(.system(size: 15))
+                                            .foregroundStyle(DS.dust)
+                                    } else {
+                                        Text(mainRecipeName)
+                                            .font(.system(size: 15))
+                                            .foregroundStyle(DS.ink)
+                                    }
                                     Spacer()
                                     Image(systemName: "chevron.right")
                                         .font(.system(size: 13, weight: .medium))
@@ -165,14 +175,15 @@ struct MealEditSheet: View {
 
                         // Save button
                         Button(action: save) {
-                            Text("Tamam")
+                            Text(isNewMeal ? "Öğün Ekle" : "Tamam")
                                 .font(.system(size: 16, weight: .semibold))
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 50)
                                 .foregroundStyle(.white)
-                                .background(DS.ink)
+                                .background(canSave ? DS.ember : DS.stone)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
+                        .disabled(!canSave)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
@@ -200,19 +211,40 @@ struct MealEditSheet: View {
         .presentationDragIndicator(.visible)
     }
 
+    private var canSave: Bool {
+        !mainRecipeName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     private func save() {
+        guard canSave else { return }
         var updated = meal
-        updated.name = mainRecipeName
+        // Compose name: main + sides
+        if sideRecipes.isEmpty {
+            updated.name = mainRecipeName
+        } else {
+            updated.name = mainRecipeName + " + " + sideRecipes.joined(separator: " + ")
+        }
         updated.mealType = mealType
         if !notes.isEmpty {
             let existing = updated.description ?? ""
             updated.description = existing.isEmpty ? notes : "\(existing)\n\(notes)"
         }
-        // Add side recipe ingredients
+        // Merge calories from main + sides
+        var totalCalories = meal.calories ?? 0
+        if let mainRecipe = userRecipes.first(where: { $0.title == mainRecipeName }) {
+            if isNewMeal {
+                totalCalories = mainRecipe.calories_total_kcal.map { Int($0) } ?? 0
+                updated.ingredients = mainRecipe.ingredients_without_measures
+            }
+        }
         for sideName in sideRecipes {
             if let recipe = userRecipes.first(where: { $0.title == sideName }) {
+                totalCalories += recipe.calories_total_kcal.map { Int($0) } ?? 0
                 updated.ingredients += recipe.ingredients_without_measures
             }
+        }
+        if totalCalories > 0 {
+            updated.calories = totalCalories
         }
         onSave(updated)
         dismiss()

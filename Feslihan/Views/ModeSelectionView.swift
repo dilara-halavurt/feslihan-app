@@ -19,6 +19,7 @@ struct ModeSelectionView: View {
     @State private var showMealPrepWizard = false
     @State private var showAccountSheet = false
     @State private var pantryCount = 0
+    @State private var shoppingCount = 0
     @State private var recipeCount = 0
     @State private var showPantryGate = false
     @State private var pendingMode: AppMode?
@@ -38,6 +39,8 @@ struct ModeSelectionView: View {
         guard let userId = Clerk.shared.user?.id else { return }
         let items = await APIService.fetchPantry(userId: userId)
         pantryCount = items.count
+        let shoppingItems = await APIService.fetchShoppingList(userId: userId)
+        shoppingCount = shoppingItems.filter { !$0.is_checked }.count
     }
 
     private func navigateOrGate(_ mode: AppMode) {
@@ -93,7 +96,7 @@ struct ModeSelectionView: View {
                                     .font(.handwritten())
                                     .foregroundStyle(DS.dust)
 
-                                Text("Merhaba, \(Clerk.shared.user?.firstName ?? "Neslihan")")
+                                Text(Clerk.shared.user?.firstName.map { "Merhaba, \($0)" } ?? "Merhaba")
                                     .font(.displayLarge())
                                     .foregroundStyle(DS.ink)
                             }
@@ -119,7 +122,43 @@ struct ModeSelectionView: View {
                         .padding(.top, 8)
                         .padding(.bottom, 18)
 
-                        // Mode cards
+                        // Empty state prompt
+                        if recipeCount == 0 {
+                            Button(action: { showAddRecipe = true }) {
+                                HStack(spacing: 14) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 28, weight: .medium))
+                                        .foregroundStyle(DS.flour)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("İlk tarifini ekle")
+                                            .font(.cardTitle())
+                                            .foregroundStyle(DS.flour)
+
+                                        Text("Sosyal medyadan veya web'den tarif kaydet")
+                                            .font(.captionText())
+                                            .foregroundStyle(DS.flour.opacity(0.8))
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(DS.flour.opacity(0.6))
+                                }
+                                .padding(16)
+                                .background(
+                                    LinearGradient(colors: [DS.ember, DS.emberDark], startPoint: .leading, endPoint: .trailing)
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .shadow(color: DS.shadowButton, radius: 8, y: 4)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 8)
+                        }
+
+                        // Mode cards (3 primary modes)
                         VStack(spacing: 12) {
                             ModeCard(
                                 icon: "calendar",
@@ -161,41 +200,44 @@ struct ModeSelectionView: View {
                                 }
                             }
 
-                            ModeCard(
-                                icon: "cabinet.fill",
-                                title: "Kilerim",
-                                subtitle: "Evdeki malzemeleri takip et"
-                            )
-                            .opacity(cardsVisible ? 1 : 0)
-                            .offset(y: cardsVisible ? 0 : 20)
-                            .onTapGesture {
-                                withAnimation(.spring(response: 0.2)) {
-                                    selectedMode = .pantry
-                                }
-                            }
+                            // Mutfak section
+                            Text("MUTFAK")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .tracking(1.4)
+                                .foregroundStyle(DS.dust)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, 14)
+                                .padding(.leading, 2)
 
-                            ModeCard(
-                                icon: "basket.fill",
-                                title: "Alışveriş Listesi",
-                                subtitle: "Eksikleri tek listede topla"
-                            )
-                            .opacity(cardsVisible ? 1 : 0)
-                            .offset(y: cardsVisible ? 0 : 20)
-                            .onTapGesture {
-                                withAnimation(.spring(response: 0.2)) {
-                                    selectedMode = .shoppingList
+                            HStack(spacing: 12) {
+                                UtilCard(
+                                    icon: "cabinet.fill",
+                                    title: "Kilerim",
+                                    count: "\(pantryCount)",
+                                    unit: "malzeme",
+                                    tint: DS.ember
+                                )
+                                .onTapGesture {
+                                    withAnimation(.spring(response: 0.2)) {
+                                        selectedMode = .pantry
+                                    }
+                                }
+
+                                UtilCard(
+                                    icon: "basket.fill",
+                                    title: "Alışveriş",
+                                    count: "\(shoppingCount)",
+                                    unit: "eksik ürün",
+                                    tint: DS.terracotta
+                                )
+                                .onTapGesture {
+                                    withAnimation(.spring(response: 0.2)) {
+                                        selectedMode = .shoppingList
+                                    }
                                 }
                             }
                         }
                         .padding(.horizontal, 20)
-
-                        // Stats row
-                        HStack(spacing: 12) {
-                            StatCard(value: "\(recipeCount)", label: "kayıtlı tarif", color: DS.ember)
-                            StatCard(value: "\(pantryCount)", label: "kilerinde malzeme", color: DS.terracotta)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
                         .padding(.bottom, 80)
                     }
                 }
@@ -274,28 +316,60 @@ struct ModeSelectionView: View {
     }
 }
 
-// MARK: - Stat Card
+// MARK: - Util Card (compact Mutfak cards)
 
-private struct StatCard: View {
-    let value: String
-    let label: String
-    let color: Color
+private struct UtilCard: View {
+    let icon: String
+    let title: String
+    let count: String
+    let unit: String
+    let tint: Color
+
+    @State private var isPressed = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.system(size: 24, weight: .semibold, design: .serif))
-                .foregroundStyle(color)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(tint)
+                    .frame(width: 38, height: 38)
+                    .background(DS.sand)
+                    .clipShape(RoundedRectangle(cornerRadius: 11))
 
-            Text(label)
-                .font(.captionText())
-                .foregroundStyle(DS.dust)
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DS.dust)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(DS.ink)
+
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(count)
+                        .font(.system(size: 20, weight: .semibold, design: .serif))
+                        .foregroundStyle(tint)
+                    Text(unit)
+                        .font(.captionText())
+                        .foregroundStyle(DS.dust)
+                }
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(DS.flour)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: DS.shadowCard, radius: 4, y: 2)
+        .scaleEffect(isPressed ? 0.97 : 1.0)
+        .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
+            withAnimation(.easeOut(duration: 0.15)) {
+                isPressed = pressing
+            }
+        }, perform: {})
     }
 }
 

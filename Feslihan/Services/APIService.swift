@@ -1,8 +1,11 @@
 import Foundation
 
 enum APIService {
-    // TODO: Restore localhost for local dev when backend is running
+    #if DEBUG
+    static let baseURL = "http://localhost:3000"
+    #else
     static let baseURL = "https://feslihan-app.vercel.app"
+    #endif
 
     /// Check if a recipe already exists for this URL.
     static func lookup(url: String) async -> RecipeDTO? {
@@ -44,6 +47,33 @@ enum APIService {
         }
 
         return (try? JSONDecoder().decode([RecipeDTO].self, from: data)) ?? []
+    }
+
+    /// Submit a recipe review after cooking.
+    static func submitReview(recipeId: String, userId: String, rating: Int, comment: String?) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/recipes/\(recipeId)/reviews") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "user_id": userId,
+            "rating": rating,
+            "comment": comment ?? NSNull()
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse,
+              http.statusCode == 200 else { return false }
+        return true
+    }
+
+    /// Fetch all recipe IDs a user has reviewed/tried.
+    static func fetchUserReviews(userId: String) async -> [UserReviewDTO] {
+        guard let url = URL(string: "\(baseURL)/users/\(userId)/reviews") else { return [] }
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              let http = response as? HTTPURLResponse,
+              http.statusCode == 200 else { return [] }
+        return (try? JSONDecoder().decode([UserReviewDTO].self, from: data)) ?? []
     }
 
     /// Fetch all known ingredients (with price tier) from the backend.
@@ -90,6 +120,31 @@ enum APIService {
         }
 
         return try? JSONDecoder().decode(RecipeDTO.self, from: data)
+    }
+
+    // MARK: - Web Scraping
+
+    static func scrapeWebRecipe(url: String) async throws -> ScrapedRecipe {
+        guard let requestURL = URL(string: "\(baseURL)/recipes/scrape-web") else {
+            throw FeslihanError.recipeParseFailed
+        }
+
+        var request = URLRequest(url: requestURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 60
+        let body = ["url": url]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            let responseBody = String(data: data, encoding: .utf8) ?? ""
+            print("[Scrape] Failed: \(responseBody)")
+            throw FeslihanError.recipeParseFailed
+        }
+
+        return try JSONDecoder().decode(ScrapedRecipe.self, from: data)
     }
 
     // MARK: - Folders
@@ -255,6 +310,9 @@ struct IngredientDTO: Codable, Identifiable {
     let price_per_unit: Double?
     let price_unit: String?
     let price_updated_at: String?
+    let default_unit: String?      // "g", "ml", "adet"
+    let density_g_ml: Double?      // grams per ml
+    let gram_per_adet: Double?     // grams per 1 piece
 
     var priceTierEmoji: String? {
         switch price_tier {
@@ -278,6 +336,15 @@ struct IngredientDTO: Codable, Identifiable {
         default: return nil
         }
     }
+}
+
+struct UserReviewDTO: Codable, Identifiable {
+    let id: String
+    let user_id: String
+    let recipe_id: String
+    let rating: Int
+    let comment: String?
+    let created_at: String
 }
 
 struct InstagramUserDTO: Codable {
@@ -472,4 +539,33 @@ struct ShoppingItemDTO: Codable, Identifiable {
     let availability: String?
     let is_checked: Bool
     let added_at: String
+}
+
+struct ScrapedRecipeIngredient: Codable {
+    let name: String
+    let amount: String
+}
+
+struct ScrapedRecipe: Codable {
+    let is_recipe: Bool
+    let title: String
+    let ingredients: [ScrapedRecipeIngredient]
+    let base_ingredients: [String]
+    let instructions: String
+    let cooking_time_minutes: Int?
+    let servings: Int?
+    let calories_total_kcal: Double?
+    let calories_per_serving_kcal: Double?
+    let protein_grams: Double?
+    let carbs_grams: Double?
+    let fat_grams: Double?
+    let fiber_grams: Double?
+    let difficulty: String?
+    let cuisine: String?
+    let tags: [String]
+    let freezer_friendly: Bool
+    let platform_user: String?
+    let thumbnail_url: String?
+    let likes_count: Int?
+    let comments_count: Int?
 }

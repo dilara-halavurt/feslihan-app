@@ -77,7 +77,7 @@ struct AddRecipeView: View {
                             .font(.system(size: 26, weight: .semibold, design: .serif))
                             .foregroundStyle(DS.ink)
 
-                        Text("Bir video linki yapıştır, tarifi senin için çıkaralım.")
+                        Text("Bir video veya tarif linki yapıştır, tarifi senin için çıkaralım.")
                             .font(.bodyText())
                             .foregroundStyle(DS.smoke)
                     }
@@ -87,7 +87,7 @@ struct AddRecipeView: View {
 
                     // URL input + paste button
                     HStack(spacing: 8) {
-                        TextField("tiktok.com/@…/video/72…", text: $urlText)
+                        TextField("Link yapıştır…", text: $urlText)
                             .textContentType(.URL)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
@@ -134,6 +134,13 @@ struct AddRecipeView: View {
                                 .background(DS.sand)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
+
+                        Image(systemName: "fork.knife")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(DS.smoke)
+                            .frame(width: 36, height: 36)
+                            .background(DS.sand)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
                     .padding(.horizontal, 20)
 
@@ -166,7 +173,9 @@ struct AddRecipeView: View {
                         .font(.system(size: 26, weight: .semibold, design: .serif))
                         .foregroundStyle(DS.ink)
 
-                    Text("Bir video linki yapıştır, tarifi senin için çıkaralım.")
+                    Text(isWebRecipe
+                        ? "Tarif sitesinden bilgiler çıkartılıyor…"
+                        : "Bir video linki yapıştır, tarifi senin için çıkaralım.")
                         .font(.bodyText())
                         .foregroundStyle(DS.smoke)
                 }
@@ -174,13 +183,19 @@ struct AddRecipeView: View {
 
                 // Processing checklist card
                 VStack(spacing: 0) {
-                    checklistRow("Video bilgileri", state: checkState(for: .fetchingCaption))
-                    Divider().background(DS.stone)
-                    checklistRow("Ses çıkartma", state: checkState(for: .extractingAudio))
-                    Divider().background(DS.stone)
-                    checklistRow("Yazı çevirme", state: checkState(for: .transcribing))
-                    Divider().background(DS.stone)
-                    checklistRow("Tarif analizi", state: checkState(for: .analyzingRecipe))
+                    if isWebRecipe {
+                        checklistRow("Tarif bilgileri", state: checkState(for: .fetchingCaption))
+                        Divider().background(DS.stone)
+                        checklistRow("Besin değerleri", state: checkState(for: .analyzingRecipe))
+                    } else {
+                        checklistRow("Video bilgileri", state: checkState(for: .fetchingCaption))
+                        Divider().background(DS.stone)
+                        checklistRow("Ses çıkartma", state: checkState(for: .extractingAudio))
+                        Divider().background(DS.stone)
+                        checklistRow("Yazı çevirme", state: checkState(for: .transcribing))
+                        Divider().background(DS.stone)
+                        checklistRow("Tarif analizi", state: checkState(for: .analyzingRecipe))
+                    }
                 }
                 .background(DS.flour)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -393,7 +408,12 @@ struct AddRecipeView: View {
         if host.contains("instagram") { return "instagram" }
         if host.contains("tiktok") { return "tiktok" }
         if host.contains("twitter") || host.contains("x.com") { return "x" }
+        if host.contains("nefisyemektarifleri") { return "nefisyemektarifleri" }
         return "other"
+    }
+
+    private var isWebRecipe: Bool {
+        detectPlatform() == "nefisyemektarifleri"
     }
 
     private func processAll() {
@@ -420,50 +440,12 @@ struct AddRecipeView: View {
                     return
                 }
 
-                processingState = .fetchingCaption
-                let captionResult = try await CaptionService.fetchCaption(from: trimmedURL)
-                guard !captionResult.caption.isEmpty else {
-                    throw FeslihanError.captionFetchFailed
+                if isWebRecipe {
+                    try await processWebRecipe()
+                } else {
+                    try await processVideoRecipe()
                 }
 
-                // Try to extract audio from the video for transcription
-                var audioData: Data?
-                processingState = .extractingAudio
-                if let videoURL = URL(string: trimmedURL) {
-                    do {
-                        let audioURL = try await AudioExtractor.extractAudio(from: videoURL)
-                        audioData = try Data(contentsOf: audioURL)
-                        try? FileManager.default.removeItem(at: audioURL)
-                    } catch {
-                        print("[Audio] Extraction failed, continuing without audio: \(error)")
-                    }
-                }
-
-                processingState = .analyzingRecipe
-                let recipe = try await ClaudeService.analyzeRecipe(
-                    transcription: "",
-                    caption: captionResult.caption,
-                    audio: audioData
-                )
-
-                var dto = RecipeDTO.from(
-                    processed: recipe,
-                    url: trimmedURL,
-                    platform: detectPlatform(),
-                    caption: captionResult.caption,
-                    requestedBy: Clerk.shared.user?.id ?? "default",
-                    userId: Clerk.shared.user?.id
-                )
-                dto.thumbnail_base64 = captionResult.thumbnailData?.base64EncodedString()
-                // Prefer oEmbed author over Claude's extraction
-                if let author = captionResult.authorName, !author.isEmpty {
-                    dto.platform_user = author
-                }
-                guard await APIService.save(recipe: dto) != nil else {
-                    throw FeslihanError.recipeParseFailed
-                }
-
-                processedRecipe = recipe
                 subscription.recordRecipeAdded()
                 processingState = .done
             } catch {
@@ -471,6 +453,123 @@ struct AddRecipeView: View {
                 processingState = .error
             }
         }
+    }
+
+    private func processWebRecipe() async throws {
+        processingState = .fetchingCaption
+        let scraped = try await APIService.scrapeWebRecipe(url: trimmedURL)
+
+        processingState = .analyzingRecipe
+
+        // Download thumbnail if URL provided
+        var thumbnailBase64: String?
+        if let thumbURL = scraped.thumbnail_url {
+            let thumbData = await CaptionService.downloadImage(from: thumbURL)
+            thumbnailBase64 = thumbData?.base64EncodedString()
+        }
+
+        var dto = RecipeDTO(
+            platform: "nefisyemektarifleri",
+            platform_user: scraped.platform_user,
+            url: trimmedURL,
+            likes_count: 0,
+            comments_count: 0,
+            caption: nil,
+            title: scraped.title,
+            description: scraped.instructions,
+            ingredients_with_measures: scraped.ingredients.map { ["name": $0.name, "amount": $0.amount] },
+            ingredients_without_measures: scraped.base_ingredients,
+            servings: scraped.servings,
+            calories_total_kcal: scraped.calories_total_kcal,
+            calories_total_joules: scraped.calories_total_kcal.map { $0 * 4.184 },
+            calories_per_serving_kcal: scraped.calories_per_serving_kcal,
+            protein_grams: scraped.protein_grams,
+            carbs_grams: scraped.carbs_grams,
+            fat_grams: scraped.fat_grams,
+            fiber_grams: scraped.fiber_grams,
+            tags: scraped.tags,
+            cooking_time_minutes: scraped.cooking_time_minutes,
+            cuisine: scraped.cuisine,
+            difficulty: scraped.difficulty,
+            thumbnail_base64: thumbnailBase64,
+            freezer_friendly: scraped.freezer_friendly,
+            requested_by: Clerk.shared.user?.id ?? "default",
+            user_id: Clerk.shared.user?.id
+        )
+
+        guard await APIService.save(recipe: dto) != nil else {
+            throw FeslihanError.recipeParseFailed
+        }
+
+        processedRecipe = ProcessedRecipe(
+            title: scraped.title,
+            ingredients: scraped.ingredients.map { Ingredient(name: $0.name, amount: $0.amount) },
+            instructions: scraped.instructions,
+            cookingTimeMinutes: scraped.cooking_time_minutes,
+            thumbnailData: nil,
+            servings: scraped.servings,
+            caloriesTotalKcal: scraped.calories_total_kcal,
+            caloriesPerServingKcal: scraped.calories_per_serving_kcal,
+            proteinGrams: scraped.protein_grams,
+            carbsGrams: scraped.carbs_grams,
+            fatGrams: scraped.fat_grams,
+            fiberGrams: scraped.fiber_grams,
+            baseIngredients: scraped.base_ingredients,
+            difficulty: scraped.difficulty,
+            cuisine: scraped.cuisine,
+            tags: scraped.tags,
+            platformUser: scraped.platform_user,
+            likesCount: 0,
+            commentsCount: 0,
+            freezerFriendly: scraped.freezer_friendly
+        )
+    }
+
+    private func processVideoRecipe() async throws {
+        processingState = .fetchingCaption
+        let captionResult = try await CaptionService.fetchCaption(from: trimmedURL)
+        guard !captionResult.caption.isEmpty else {
+            throw FeslihanError.captionFetchFailed
+        }
+
+        // Try to extract audio from the video for transcription
+        var audioData: Data?
+        processingState = .extractingAudio
+        if let videoURL = URL(string: trimmedURL) {
+            do {
+                let audioURL = try await AudioExtractor.extractAudio(from: videoURL)
+                audioData = try Data(contentsOf: audioURL)
+                try? FileManager.default.removeItem(at: audioURL)
+            } catch {
+                print("[Audio] Extraction failed, continuing without audio: \(error)")
+            }
+        }
+
+        processingState = .analyzingRecipe
+        let recipe = try await ClaudeService.analyzeRecipe(
+            transcription: "",
+            caption: captionResult.caption,
+            audio: audioData
+        )
+
+        var dto = RecipeDTO.from(
+            processed: recipe,
+            url: trimmedURL,
+            platform: detectPlatform(),
+            caption: captionResult.caption,
+            requestedBy: Clerk.shared.user?.id ?? "default",
+            userId: Clerk.shared.user?.id
+        )
+        dto.thumbnail_base64 = captionResult.thumbnailData?.base64EncodedString()
+        // Prefer oEmbed author over Claude's extraction
+        if let author = captionResult.authorName, !author.isEmpty {
+            dto.platform_user = author
+        }
+        guard await APIService.save(recipe: dto) != nil else {
+            throw FeslihanError.recipeParseFailed
+        }
+
+        processedRecipe = recipe
     }
 
     private func saveRecipe() {

@@ -1011,37 +1011,66 @@ struct MealPlanResultView: View {
                 }
                 Spacer()
             } else if let plan {
-                ScrollView {
-                    // Summary card
-                    HStack(spacing: 16) {
-                        SummaryPill(icon: "fork.knife", value: "\(plan.totalRecipes)", label: "Tarif")
-                        SummaryPill(icon: "cart", value: "\(plan.shoppingList.count)", label: "Malzeme")
-                        if let cal = plan.avgCaloriesPerDay {
-                            SummaryPill(icon: "flame", value: "\(cal)", label: "kcal/gün")
+                VStack(spacing: 0) {
+                    ScrollView {
+                        // Summary card
+                        HStack(spacing: 16) {
+                            SummaryPill(icon: "fork.knife", value: "\(plan.totalRecipes)", label: "Tarif")
+                            SummaryPill(icon: "cart", value: "\(plan.shoppingList.count)", label: "Malzeme")
+                            if let cal = plan.avgCaloriesPerDay {
+                                SummaryPill(icon: "flame", value: "\(cal)", label: "kcal/gün")
+                            }
                         }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 8)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 8)
 
-                    // Days
-                    LazyVStack(spacing: 8) {
-                        ForEach(plan.days) { day in
-                            DayCard(day: day, isExpanded: expandedDay == day.id, onTap: {
-                                withAnimation(.spring(response: 0.2)) {
-                                    expandedDay = expandedDay == day.id ? nil : day.id
-                                }
-                            }, onSwapMeal: { meal in
-                                swappingMeal = meal
-                            }, onAddMeal: {
-                                addingToDayId = day.id
-                            }, onEditMeal: { meal in
-                                editingMeal = meal
-                            })
+                        // Days
+                        LazyVStack(spacing: 8) {
+                            ForEach(plan.days) { day in
+                                DayCard(day: day, isExpanded: expandedDay == day.id, onTap: {
+                                    withAnimation(.spring(response: 0.2)) {
+                                        expandedDay = expandedDay == day.id ? nil : day.id
+                                    }
+                                }, onSwapMeal: { meal in
+                                    swappingMeal = meal
+                                }, onAddMeal: {
+                                    addingToDayId = day.id
+                                }, onEditMeal: { meal in
+                                    editingMeal = meal
+                                })
+                            }
                         }
-                    }
-                    .padding(.horizontal, 20)
+                        .padding(.horizontal, 20)
 
-                    // Save button (shows shopping list after)
+                        // Shopping list button
+                        Button {
+                            showShoppingList = true
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "cart.fill")
+                                    .font(.system(size: 16))
+                                Text("Alışveriş Listesi")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Spacer()
+                                Text("\(plan.shoppingList.count) malzeme")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(DS.smoke)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(DS.dust)
+                            }
+                            .padding(16)
+                            .foregroundStyle(DS.ink)
+                            .background(DS.sand)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 20)
+
+                        Spacer().frame(height: 20)
+                    }
+
+                    // Sticky bottom bar
                     Button(action: savePlan) {
                         HStack(spacing: 8) {
                             Image(systemName: isSaved ? "checkmark.circle.fill" : "square.and.arrow.down")
@@ -1054,36 +1083,13 @@ struct MealPlanResultView: View {
                         .foregroundStyle(.white)
                         .background(isSaved ? DS.emberLight : DS.ember)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .shadow(color: isSaved ? .clear : DS.shadowButton, radius: 8, y: 4)
                     }
                     .disabled(isSaved || isSaving)
                     .padding(.horizontal, 20)
-
-                    // Shopping list button
-                    Button {
-                        showShoppingList = true
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "cart.fill")
-                                .font(.system(size: 16))
-                            Text("Alışveriş Listesi")
-                                .font(.system(size: 16, weight: .semibold))
-                            Spacer()
-                            Text("\(plan.shoppingList.count) malzeme")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(DS.smoke)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(DS.dust)
-                        }
-                        .padding(16)
-                        .foregroundStyle(DS.ink)
-                        .background(DS.sand)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 20)
-
-                    Spacer().frame(height: 40)
+                    .padding(.top, 12)
+                    .padding(.bottom, 16)
+                    .background(DS.cream)
                 }
             }
         }

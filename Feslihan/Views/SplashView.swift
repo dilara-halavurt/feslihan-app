@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SplashView: View {
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var iconScale: CGFloat = 0.75
     @State private var titleOpacity: Double = 0
     @State private var subtitleOpacity: Double = 0
@@ -8,8 +9,13 @@ struct SplashView: View {
 
     var body: some View {
         if finished {
-            ModeSelectionView()
-                .transition(.opacity)
+            if hasCompletedOnboarding {
+                ModeSelectionView()
+                    .transition(.opacity)
+            } else {
+                OnboardingView()
+                    .transition(.opacity)
+            }
         } else {
             ZStack {
                 DS.cream.ignoresSafeArea()

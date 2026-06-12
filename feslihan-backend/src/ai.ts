@@ -78,7 +78,7 @@ Eger icerik bir yemek tarifi ISE, asagidaki JSON formatinda yanit ver (baska hic
             "amount": "Miktar ve birimi"
         }
     ],
-    "base_ingredients": ["tereyagi", "yumurta", "un", "seker", "sut"],
+    "base_ingredients": ["Tereyağı", "Yumurta", "Un", "Şeker", "Süt"],
     "instructions": "Adim adim yapilis tarifi (Turkce, her adim yeni satirda)",
     "cooking_time_minutes": 25,
     "servings": 4,
@@ -103,7 +103,7 @@ Onemli kurallar:
 - Miktarlar net olmali (ornegin: "2 su bardagi", "1 tatli kasigi")
 - Icerik baska bir dilde ise Turkce'ye cevir
 - Caption, ses ve gorsellerdeki bilgileri birlestirerek en eksiksiz tarifi olustur
-- base_ingredients: Tekil, kisa, standart malzeme isimleri (tekrarsiz). Ornekler: "tereyagi", "yumurta", "un", "sut", "seker", "tuz", "zeytinyagi", "sogan", "sarimsak", "domates", "biber", "maydanoz". Aciklama veya miktar EKLEME, sadece malzeme adi yaz. Turkce kucuk harf.
+- base_ingredients: Tekil, kisa, standart malzeme isimleri (tekrarsiz). Ornekler: "Tereyağı", "Yumurta", "Un", "Süt", "Şeker", "Tuz", "Zeytinyağı", "Soğan", "Sarımsak", "Domates", "Biber", "Maydanoz". Aciklama veya miktar EKLEME, sadece malzeme adi yaz. Ilk harf buyuk, Turkce karakterler kullan.
 - ONEMLI: Eger yapilis adimlarinda gecen ama malzeme listesinde olmayan malzemeler varsa (ornegin "tuz", "karabiber", "su", "zeytinyagi" gibi), bunlari da "ingredients" listesine miktar belirtmeden ekle (amount: "").  base_ingredients'a da ekle.
 - Kalorileri ve makrolari malzemelere ve miktarlara gore tahmin et (kesin olmasi gerekmez)
 - cuisine: Tarifin mutfak turunu belirle. Degerler: "italian", "chinese", "mexican", "indian", "thai", "french", "japanese", "mediterranean", "turkish", "other"
@@ -153,6 +153,53 @@ Onemli kurallar:
     model: "claude-sonnet-4-6",
     max_tokens: 8192,
     messages: [{ role: "user", content }],
+  });
+
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new Error("No text response from Claude");
+  }
+
+  const jsonString = textBlock.text
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
+
+  return JSON.parse(jsonString);
+}
+
+export async function analyzeNutrition(recipeText: string): Promise<{
+  calories_total_kcal: number;
+  calories_per_serving_kcal: number;
+  protein_grams: number;
+  carbs_grams: number;
+  fat_grams: number;
+  fiber_grams: number;
+}> {
+  const prompt = `Sen bir beslenme uzmanısın. Aşağıdaki tarife göre besin değerlerini tahmin et.
+
+${recipeText}
+
+SADECE aşağıdaki JSON formatında yanıt ver (başka hiçbir şey yazma):
+{
+  "calories_total_kcal": 1200,
+  "calories_per_serving_kcal": 300,
+  "protein_grams": 25,
+  "carbs_grams": 150,
+  "fat_grams": 40,
+  "fiber_grams": 8
+}
+
+Kurallar:
+- calories_total_kcal: Tüm tarifin toplam kalorisi
+- calories_per_serving_kcal: Kişi başına kalori
+- protein_grams, carbs_grams, fat_grams, fiber_grams: Tüm tarifin toplam makroları (gram)
+- Malzemelere ve miktarlara göre gerçekçi tahmin yap`;
+
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: prompt }],
   });
 
   const textBlock = response.content.find((b) => b.type === "text");
@@ -281,6 +328,14 @@ Kurallar:
 - Plan süresine göre gün sayısını ayarla (${input.period})
 - Hazırlık tarzına dikkat et: "${input.prep_style}" seçildi. "Hazırla & Dondur" ise dondurulabilir tarifleri seç. "Her Gün Taze" ise hızlı tarifleri seç. "Karışık" ise karıştır.
 
+BİRDEN FAZLA TARİF KOMBİNASYONU:
+- Bir öğünde birden fazla tarif olabilir. Özellikle öğle ve akşam yemeklerinde ana yemek + yan yemek kombinasyonları kur.
+- Birden fazla tarif varsa "name" alanında "+" ile birleştir. Örnek: "Mercimek Çorbası + Pilav", "Karnıyarık + Cacık", "Menemen + Peynirli Börek"
+- Kombinasyonlarda toplam kaloriyi tüm tariflerin kalorilerini toplayarak hesapla.
+- Kombinasyonlarda malzemeleri tüm tariflerden birleştir.
+- Gerçekçi kombinasyonlar yap — çorba + ana yemek, ana yemek + salata/pilav/yan yemek gibi.
+- Her öğün 1-3 tarif içerebilir. Tek tarif de olabilir, zorunlu değil.
+
 SADECE aşağıdaki JSON formatında yanıt ver (başka hiçbir şey yazma):
 {
     "days": [
@@ -289,9 +344,9 @@ SADECE aşağıdaki JSON formatında yanıt ver (başka hiçbir şey yazma):
             "meals": [
                 {
                     "meal_type": "Kahvaltı",
-                    "name": "Yemek adı",
+                    "name": "Menemen + Su Böreği",
                     "description": "Kısa açıklama",
-                    "calories": 350,
+                    "calories": 650,
                     "ingredients": ["malzeme1", "malzeme2"]
                 }
             ]
@@ -304,7 +359,7 @@ SADECE aşağıdaki JSON formatında yanıt ver (başka hiçbir şey yazma):
 Önemli:
 - Her gün için öğün sayısı ${input.meals_per_day} olmalı
 - shopping_list tüm plan için toplu alışveriş listesi olmalı (miktar dahil)
-- calories her öğün için tahmini kalori
+- calories her öğün için tahmini kalori (birden fazla tarif varsa toplam)
 - avg_calories_per_day günlük ortalama kalori`;
 
   const response = await client.messages.create({

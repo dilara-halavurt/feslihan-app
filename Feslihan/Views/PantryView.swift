@@ -68,11 +68,11 @@ struct PantryView: View {
                             .font(.system(size: 48, weight: .light))
                             .foregroundStyle(DS.dust)
 
-                        Text("Kilerin bos")
+                        Text("Kilerin boş")
                             .font(.displayTitle())
                             .foregroundStyle(DS.ink)
 
-                        Text("Malzeme eklemek icin + butonuna dokun")
+                        Text("Malzeme eklemek için + butonuna dokun")
                             .font(.bodyText())
                             .foregroundStyle(DS.smoke)
                             .multilineTextAlignment(.center)
@@ -189,11 +189,6 @@ private struct PantryItemRow: View {
 
             Spacer()
 
-            if let tier = item.price_tier {
-                Text(priceTierEmoji(tier))
-                    .font(.captionText())
-            }
-
             Button(action: onMoveToShoppingList) {
                 Image(systemName: "cart.badge.plus")
                     .font(.system(size: 15))
@@ -209,15 +204,6 @@ private struct PantryItemRow: View {
         .padding(12)
         .background(DS.sand)
         .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    private func priceTierEmoji(_ tier: String) -> String {
-        switch tier {
-        case "cheap": return "₺"
-        case "neutral": return "₺₺"
-        case "expensive": return "₺₺₺"
-        default: return ""
-        }
     }
 }
 

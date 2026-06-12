@@ -2,10 +2,10 @@ import "dotenv/config";
 import express from "express";
 import https from "https";
 import { db } from "./db.js";
-import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans, userPantry, userShoppingList } from "./schema.js";
+import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans, userPantry, userShoppingList, recipeReviews } from "./schema.js";
 import { uploadImage, s3KeyFromUrl, getImage } from "./s3.js";
-import { analyzeRecipe, generateMealPlan, classifyIngredients, classifyFreezerFriendly } from "./ai.js";
-import { eq, desc, inArray, and } from "drizzle-orm";
+import { analyzeRecipe, analyzeNutrition, generateMealPlan, classifyIngredients, classifyFreezerFriendly } from "./ai.js";
+import { eq, desc, inArray, and, sql } from "drizzle-orm";
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
@@ -154,34 +154,35 @@ function extractUserFromURL(url: string): string | null {
   return null;
 }
 
-const turkishFixMap: Record<string, string> = {
+// Word-level Turkish character fixes (ASCII → proper Turkish)
+const turkishWordMap: Record<string, string> = {
   sarimsak: "sarımsak",
   sogan: "soğan",
+  sogani: "soğanı",
   kiyma: "kıyma",
   feslegen: "fesleğen",
   cilek: "çilek",
   salca: "salça",
+  salcasi: "salçası",
   nisasta: "nişasta",
-  "kirmizi biber": "kırmızı biber",
-  "yesil biber": "yeşil biber",
-  "taze sogan": "taze soğan",
-  "kasar peyniri": "kaşar peyniri",
+  kirmizi: "kırmızı",
+  yesil: "yeşil",
+  kasar: "kaşar",
   yogurt: "yoğurt",
   sut: "süt",
   tereyagi: "tereyağı",
   zeytinyagi: "zeytinyağı",
   seker: "şeker",
+  sekeri: "şekeri",
   pirinc: "pirinç",
   havuc: "havuç",
   patlican: "patlıcan",
   fistik: "fıstık",
+  fistigi: "fıstığı",
   ispanak: "ıspanak",
-  "ton baligi": "ton balığı",
-  "defne yapragi": "defne yaprağı",
-  "tatli biber": "tatlı biber",
-  "sarimsak tozu": "sarımsak tozu",
-  "sogan tozu": "soğan tozu",
-  "taze fasulye": "taze fasulye",
+  baligi: "balığı",
+  yapragi: "yaprağı",
+  tatli: "tatlı",
   misir: "mısır",
   pirasa: "pırasa",
   salatalik: "salatalık",
@@ -189,35 +190,61 @@ const turkishFixMap: Record<string, string> = {
   kayisi: "kayısı",
   visne: "vişne",
   uzum: "üzüm",
-  incir: "incir",
-  "kabartma tozu": "kabartma tozu",
-  "beyaz peynir": "beyaz peynir",
-  "pul biber": "pul biber",
   cicek: "çiçek",
   corek: "çörek",
-  "corek otu": "çörek otu",
-  kuskus: "kuskus",
-  "aci biber": "acı biber",
-  susam: "susam",
+  corekotu: "çörekotu",
+  aci: "acı",
   bugday: "buğday",
   cesnisi: "çeşnisi",
-  sucuk: "sucuk",
   pastirma: "pastırma",
   corba: "çorba",
   borek: "börek",
   guvec: "güveç",
   kofte: "köfte",
-  dolma: "dolma",
   tursu: "turşu",
   recel: "reçel",
-  "antep fistigi": "antep fıstığı",
-  "pudra sekeri": "pudra şekeri",
   lavash: "lavaş",
+  cikolata: "çikolata",
+  biskuvi: "bisküvi",
+  eriste: "erişte",
+  findik: "fındık",
+  kori: "köri",
+  kornison: "kornişon",
+  yagi: "yağı",
+  yag: "yağ",
+  eksisi: "ekşisi",
+  sivi: "sıvı",
+  siviyag: "sıvıyağ",
+  tatlandirici: "tatlandırıcı",
+  zerdecal: "zerdeçal",
+  arpacik: "arpacık",
+  ezmesi: "ezmesi",
+  cipsi: "cipsi",
+  mercimek: "mercimek",
+  peyniri: "peyniri",
+  pudra: "pudra",
+  kabartma: "kabartma",
+  fasulye: "fasulye",
+  dolma: "dolma",
+  sucuk: "sucuk",
+  susam: "susam",
+  kuskus: "kuskus",
+  incir: "incir",
 };
 
+function turkishCapitalize(str: string): string {
+  if (!str) return str;
+  const first = str[0];
+  if (first === "i") return "İ" + str.slice(1);
+  if (first === "ı") return "I" + str.slice(1);
+  return first.toLocaleUpperCase("tr-TR") + str.slice(1);
+}
+
 function fixTurkish(name: string): string {
-  const lower = name.toLowerCase().trim();
-  return turkishFixMap[lower] ?? lower;
+  const lower = name.toLocaleLowerCase("tr-TR").trim();
+  // Fix each word individually
+  const fixed = lower.split(/\s+/).map((w) => turkishWordMap[w] ?? w).join(" ");
+  return turkishCapitalize(fixed);
 }
 
 async function resolveIngredientIds(names: string[]): Promise<string[]> {
@@ -267,44 +294,92 @@ async function resolveIngredientNames(ids: string[]): Promise<string[]> {
   return ids.map((id) => idToName.get(id) ?? id);
 }
 
+async function resolveTagIds(names: string[]): Promise<string[]> {
+  if (!names || names.length === 0) return [];
+  const unique = [...new Set(names)];
+
+  const existing = await db
+    .select({ id: tags.id, name: tags.name })
+    .from(tags)
+    .where(inArray(tags.name, unique));
+
+  const nameToId = new Map(existing.map((r) => [r.name, r.id]));
+  return names.map((n) => nameToId.get(n)).filter(Boolean) as string[];
+}
+
+async function resolveTagNames(ids: string[]): Promise<string[]> {
+  if (!ids || ids.length === 0) return [];
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const validIds = ids.filter((id) => uuidPattern.test(id));
+  if (validIds.length === 0) return ids; // already names, return as-is
+
+  const rows = await db
+    .select({ id: tags.id, name: tags.name })
+    .from(tags)
+    .where(inArray(tags.id, validIds));
+
+  const idToName = new Map(rows.map((r) => [r.id, r.name]));
+  return ids.map((id) => idToName.get(id) ?? id);
+}
+
 async function enrichRecipe(recipe: any): Promise<any> {
   const obj = rewriteThumbnail(toSnake(recipe));
   if (obj.ingredients_without_measures && Array.isArray(obj.ingredients_without_measures)) {
     obj.ingredients_without_measures = await resolveIngredientNames(obj.ingredients_without_measures);
+  }
+  if (obj.tags && Array.isArray(obj.tags)) {
+    obj.tags = await resolveTagNames(obj.tags);
   }
   return obj;
 }
 
 async function enrichRecipes(recipes: any[]): Promise<any[]> {
   // Batch resolve all IDs at once for efficiency
-  const allIds = new Set<string>();
+  const allIngIds = new Set<string>();
+  const allTagIds = new Set<string>();
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   for (const r of recipes) {
     const ings = (r.ingredientsWithoutMeasures ?? r.ingredients_without_measures) as string[] | null;
-    if (ings) ings.filter((id: string) => uuidPattern.test(id)).forEach((id: string) => allIds.add(id));
+    if (ings) ings.filter((id: string) => uuidPattern.test(id)).forEach((id: string) => allIngIds.add(id));
+    const ts = (r.tags ?? r.tags) as string[] | null;
+    if (ts) ts.filter((id: string) => uuidPattern.test(id)).forEach((id: string) => allTagIds.add(id));
   }
 
-  let idToName = new Map<string, string>();
-  if (allIds.size > 0) {
+  let ingIdToName = new Map<string, string>();
+  if (allIngIds.size > 0) {
     const rows = await db
       .select({ id: ingredients.id, name: ingredients.name })
       .from(ingredients)
-      .where(inArray(ingredients.id, [...allIds]));
-    idToName = new Map(rows.map((r) => [r.id, r.name]));
+      .where(inArray(ingredients.id, [...allIngIds]));
+    ingIdToName = new Map(rows.map((r) => [r.id, r.name]));
+  }
+
+  let tagIdToName = new Map<string, string>();
+  if (allTagIds.size > 0) {
+    const rows = await db
+      .select({ id: tags.id, name: tags.name })
+      .from(tags)
+      .where(inArray(tags.id, [...allTagIds]));
+    tagIdToName = new Map(rows.map((r) => [r.id, r.name]));
   }
 
   return recipes.map((r) => {
     const obj = rewriteThumbnail(toSnake(r));
     if (obj.ingredients_without_measures && Array.isArray(obj.ingredients_without_measures)) {
       obj.ingredients_without_measures = obj.ingredients_without_measures.map(
-        (id: string) => idToName.get(id) ?? id
+        (id: string) => ingIdToName.get(id) ?? id
+      );
+    }
+    if (obj.tags && Array.isArray(obj.tags)) {
+      obj.tags = obj.tags.map(
+        (id: string) => tagIdToName.get(id) ?? id
       );
     }
     return obj;
   });
 }
 
-async function ensureCreator(username: string | null | undefined, platform: "instagram" | "tiktok" | "x" | "other") {
+async function ensureCreator(username: string | null | undefined, platform: "instagram" | "tiktok" | "x" | "nefisyemektarifleri" | "other") {
   if (!username || username === "unknown") return;
   const trimmed = username.trim().toLowerCase();
   if (!trimmed) return;
@@ -463,7 +538,7 @@ app.post("/recipes", async (req, res) => {
       carbsGrams: data.carbs_grams,
       fatGrams: data.fat_grams,
       fiberGrams: data.fiber_grams,
-      tags: (data.tags ?? []).filter((t: string) => PREDEFINED_TAGS.includes(t)),
+      tags: await resolveTagIds((data.tags ?? []).filter((t: string) => PREDEFINED_TAGS.includes(t))),
       cookingTimeMinutes: data.cooking_time_minutes ?? parseCookingTime(data.cooking_time) ?? 30,
       cuisine: data.cuisine,
       difficulty: data.difficulty,
@@ -495,7 +570,7 @@ app.get("/recipes", async (req, res) => {
   }
   if (req.query.platform) {
     conditions.push(
-      eq(recipes.platform, req.query.platform as "instagram" | "tiktok" | "x" | "other")
+      eq(recipes.platform, req.query.platform as "instagram" | "tiktok" | "x" | "nefisyemektarifleri" | "other")
     );
   }
 
@@ -672,6 +747,9 @@ app.get("/ingredients", async (_req, res) => {
     price_per_unit: r.pricePerUnit,
     price_unit: r.priceUnit,
     price_updated_at: r.priceUpdatedAt,
+    default_unit: r.defaultUnit,
+    density_g_ml: r.densityGMl,
+    gram_per_adet: r.gramPerAdet,
   })));
 });
 
@@ -760,6 +838,88 @@ app.post("/ingredients/classify", async (_req, res) => {
   } catch (err: any) {
     console.error("[Classify]", err.message || err);
     res.status(500).json({ error: "Classification failed", detail: err.message });
+  }
+});
+
+// Consolidate ingredients: capitalize first letter with proper Turkish characters, merge duplicates
+app.post("/ingredients/consolidate", async (_req, res) => {
+  try {
+    const all = await db.select().from(ingredients).orderBy(ingredients.name);
+    console.log(`[Consolidate] Processing ${all.length} ingredients...`);
+
+    // Group by normalized (capitalized Turkish) name
+    const groups = new Map<string, typeof all>();
+    for (const row of all) {
+      const canonical = fixTurkish(row.name);
+      if (!groups.has(canonical)) groups.set(canonical, []);
+      groups.get(canonical)!.push(row);
+    }
+
+    let renamed = 0;
+    let merged = 0;
+
+    for (const [canonical, rows] of groups) {
+      if (rows.length === 1) {
+        // Just rename if needed
+        if (rows[0].name !== canonical) {
+          await db.update(ingredients).set({ name: canonical }).where(eq(ingredients.id, rows[0].id));
+          console.log(`  Renamed: "${rows[0].name}" -> "${canonical}"`);
+          renamed++;
+        }
+      } else {
+        // Merge duplicates: keep the first one (prefer one with classification data)
+        const sorted = rows.sort((a, b) => {
+          const aScore = (a.priceTier ? 1 : 0) + (a.availability ? 1 : 0) + (a.pricePerUnit ? 1 : 0);
+          const bScore = (b.priceTier ? 1 : 0) + (b.availability ? 1 : 0) + (b.pricePerUnit ? 1 : 0);
+          return bScore - aScore;
+        });
+        const keep = sorted[0];
+        const dupes = sorted.slice(1);
+        const dupeIds = dupes.map((d) => d.id);
+
+        // Update references in userPantry
+        await db.update(userPantry)
+          .set({ ingredientId: keep.id })
+          .where(inArray(userPantry.ingredientId, dupeIds));
+
+        // Update references in userShoppingList
+        await db.update(userShoppingList)
+          .set({ ingredientId: keep.id })
+          .where(inArray(userShoppingList.ingredientId, dupeIds));
+
+        // Update jsonb arrays in recipes.ingredients_without_measures
+        for (const dupe of dupes) {
+          await db.execute(sql`
+            UPDATE recipes
+            SET ingredients_without_measures = (
+              SELECT jsonb_agg(
+                CASE WHEN elem = ${dupe.id}::text THEN ${keep.id}::text ELSE elem END
+              )
+              FROM jsonb_array_elements_text(ingredients_without_measures) AS elem
+            )
+            WHERE ingredients_without_measures::text LIKE ${"%" + dupe.id + "%"}
+          `);
+        }
+
+        // Delete duplicates
+        await db.delete(ingredients).where(inArray(ingredients.id, dupeIds));
+
+        // Rename the kept one
+        if (keep.name !== canonical) {
+          await db.update(ingredients).set({ name: canonical }).where(eq(ingredients.id, keep.id));
+        }
+
+        console.log(`  Merged: [${rows.map((r) => `"${r.name}"`).join(", ")}] -> "${canonical}" (kept ${keep.id})`);
+        merged += dupes.length;
+        renamed++;
+      }
+    }
+
+    console.log(`[Consolidate] Done: ${renamed} renamed, ${merged} duplicates merged`);
+    res.json({ renamed, merged, total: all.length, remaining: groups.size });
+  } catch (err: any) {
+    console.error("[Consolidate]", err.message || err);
+    res.status(500).json({ error: "Consolidation failed", detail: err.message });
   }
 });
 
@@ -1229,30 +1389,81 @@ app.get("/users/:userId/meal-plans", async (req, res) => {
 
 // Update a meal plan
 app.put("/meal-plans/:id", async (req, res) => {
-  const { name, plan, recipe_ids } = req.body;
-  const updates: Record<string, any> = {};
-  if (name) updates.name = name;
-  if (plan) updates.plan = plan;
-  if (recipe_ids) updates.recipeIds = recipe_ids;
+  try {
+    const { name, plan, recipe_ids } = req.body;
+    const updates: Record<string, any> = {};
+    if (name !== undefined) updates.name = name;
+    if (plan !== undefined) updates.plan = plan;
+    if (recipe_ids !== undefined) updates.recipeIds = recipe_ids;
 
-  const result = await db
-    .update(mealPlans)
-    .set(updates)
-    .where(eq(mealPlans.id, req.params.id))
-    .returning();
+    if (Object.keys(updates).length === 0) {
+      res.status(400).json({ error: "No fields to update" });
+      return;
+    }
 
-  if (result.length === 0) {
-    res.status(404).json({ error: "Plan not found" });
-    return;
+    const result = await db
+      .update(mealPlans)
+      .set(updates)
+      .where(eq(mealPlans.id, req.params.id))
+      .returning();
+
+    if (result.length === 0) {
+      res.status(404).json({ error: "Plan not found" });
+      return;
+    }
+
+    res.json(toSnake(result[0]));
+  } catch (err) {
+    console.error("[meal-plans PUT] Error:", err);
+    res.status(500).json({ error: "Failed to update plan" });
   }
-
-  res.json(toSnake(result[0]));
 });
 
 // Delete a meal plan
 app.delete("/meal-plans/:id", async (req, res) => {
   await db.delete(mealPlans).where(eq(mealPlans.id, req.params.id));
   res.status(204).send();
+});
+
+// ── Recipe Reviews ─────────────────────────────────────────────────────
+
+app.post("/recipes/:recipeId/reviews", async (req, res) => {
+  try {
+    const { user_id, rating, comment } = req.body;
+    if (!user_id || !rating || rating < 1 || rating > 5) {
+      res.status(400).json({ error: "user_id and rating (1-5) required" });
+      return;
+    }
+    const result = await db.insert(recipeReviews).values({
+      userId: user_id,
+      recipeId: req.params.recipeId,
+      rating,
+      comment: comment || null,
+    }).returning();
+    res.json(toSnake(result[0]));
+  } catch (err) {
+    console.error("[reviews POST]", err);
+    res.status(500).json({ error: "Failed to save review" });
+  }
+});
+
+app.get("/recipes/:recipeId/reviews", async (req, res) => {
+  const result = await db
+    .select()
+    .from(recipeReviews)
+    .where(eq(recipeReviews.recipeId, req.params.recipeId))
+    .orderBy(desc(recipeReviews.createdAt));
+  res.json(toSnake(result));
+});
+
+// Get all recipes a user has tried (with their reviews)
+app.get("/users/:userId/reviews", async (req, res) => {
+  const result = await db
+    .select()
+    .from(recipeReviews)
+    .where(eq(recipeReviews.userId, req.params.userId))
+    .orderBy(desc(recipeReviews.createdAt));
+  res.json(toSnake(result));
 });
 
 // ── Pantry ──────────────────────────────────────────────────────────────
@@ -1442,6 +1653,190 @@ app.get("/tags", async (_req, res) => {
   res.json(result.map((r) => r.name));
 });
 
+// Scrape recipe from nefisyemektarifleri.com
+app.post("/recipes/scrape-web", async (req, res) => {
+  const { url } = req.body;
+  if (!url || !url.includes("nefisyemektarifleri.com")) {
+    res.status(400).json({ error: "Only nefisyemektarifleri.com URLs are supported" });
+    return;
+  }
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "tr-TR,tr;q=0.9",
+      },
+    });
+
+    if (!response.ok) {
+      res.status(502).json({ error: `Failed to fetch page: ${response.status}` });
+      return;
+    }
+
+    const html = await response.text();
+
+    // Parse title from <h1>
+    const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+    const title = titleMatch ? decodeHTMLEntities(titleMatch[1].trim()) : "";
+
+    // Parse servings & cooking time from article list items
+    const servingsMatch = html.match(/([\d]+(?:-\d+)?)\s*Kişilik/i);
+    const servings = servingsMatch ? parseInt(servingsMatch[1].split("-").pop()!) : null;
+
+    const timeMatch = html.match(/([\d]+)dk\s*Hazırlık(?:,?\s*([\d]+)dk\s*Pişirme)?/i);
+    let cookingTimeMinutes = 30;
+    if (timeMatch) {
+      cookingTimeMinutes = parseInt(timeMatch[1]) + (timeMatch[2] ? parseInt(timeMatch[2]) : 0);
+    }
+
+    // Parse ingredients: find all <li> inside the ingredients section
+    const ingredientSectionMatch = html.match(
+      /Malzemeler<\/h2>([\s\S]*?)<h2[^>]*>.*?Nasıl Yapılır/i
+    );
+    const ingredientsWithMeasures: { name: string; amount: string }[] = [];
+    const baseIngredients: string[] = [];
+    if (ingredientSectionMatch) {
+      const ingSection = ingredientSectionMatch[1];
+      const liRegex = /<li[^>]*>([^<]+)<\/li>/gi;
+      let match;
+      while ((match = liRegex.exec(ingSection)) !== null) {
+        const raw = decodeHTMLEntities(match[1].trim());
+        // Try to separate amount from name: "4 su bardağı un" -> amount: "4 su bardağı", name: "un"
+        const parts = parseIngredientLine(raw);
+        ingredientsWithMeasures.push(parts);
+        baseIngredients.push(parts.name.toLowerCase());
+      }
+    }
+
+    // Parse instructions: find all <li> inside the "Nasıl Yapılır" section
+    const instructionSectionMatch = html.match(
+      /Nasıl Yapılır\??\s*<\/h2>([\s\S]*?)(?:<h2|<div[^>]+class="[^"]*sharing)/i
+    );
+    let instructions = "";
+    if (instructionSectionMatch) {
+      const instSection = instructionSectionMatch[1];
+      const liRegex = /<li[^>]*>([^<]+)<\/li>/gi;
+      const steps: string[] = [];
+      let match;
+      while ((match = liRegex.exec(instSection)) !== null) {
+        steps.push(decodeHTMLEntities(match[1].trim()));
+      }
+      instructions = steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
+    }
+
+    // Parse thumbnail from og:image
+    const ogImageMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+      ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    const thumbnailUrl = ogImageMatch ? ogImageMatch[1].replace(/&amp;/g, "&") : null;
+
+    // Parse author
+    const authorMatch = html.match(/<a[^>]+class="[^"]*author[^"]*"[^>]*>([^<]+)<\/a>/i)
+      ?? html.match(/<link[^>]+rel=["']author["'][^>]+href=["'][^"']*\/u\/([^/]+)\//i);
+    const platformUser = authorMatch ? decodeHTMLEntities(authorMatch[1].trim()) : null;
+
+    // Parse tags from breadcrumb
+    const tagMatches: string[] = [];
+    const breadcrumbRegex = /kategori\/tarifler\/([^/"]+)/gi;
+    let bMatch;
+    while ((bMatch = breadcrumbRegex.exec(html)) !== null) {
+      const tag = decodeURIComponent(bMatch[1]).replace(/-tarifleri$/i, "").replace(/-/g, " ");
+      const mapped = PREDEFINED_TAGS.find((t) => tag.includes(t));
+      if (mapped && !tagMatches.includes(mapped)) tagMatches.push(mapped);
+    }
+
+    // Determine difficulty based on cooking time and ingredient count
+    const difficulty = cookingTimeMinutes <= 20 && ingredientsWithMeasures.length <= 8
+      ? "low"
+      : cookingTimeMinutes >= 60 || ingredientsWithMeasures.length >= 15
+        ? "high"
+        : "medium";
+
+    // Build recipe text for Claude nutrition estimation
+    const recipeText = `${title}\n${servings} kişilik\nMalzemeler:\n${ingredientsWithMeasures.map((i) => `${i.amount} ${i.name}`).join("\n")}\n\nYapılış:\n${instructions}`;
+
+    // Use Claude for nutrition estimation
+    let nutrition: any = {};
+    try {
+      nutrition = await analyzeNutrition(recipeText);
+    } catch (err) {
+      console.error("[Scrape] Nutrition estimation failed:", err);
+    }
+
+    // Determine freezer-friendliness from tags and title
+    const freezerKeywords = ["mantı", "börek", "köfte", "dolma", "sarma", "çorba", "güveç", "pilav"];
+    const freezerFriendly = freezerKeywords.some((kw) =>
+      title.toLowerCase().includes(kw) || tagMatches.some((t) => t.includes(kw))
+    );
+
+    const result = {
+      is_recipe: true,
+      title,
+      ingredients: ingredientsWithMeasures,
+      base_ingredients: baseIngredients,
+      instructions,
+      cooking_time_minutes: cookingTimeMinutes,
+      servings,
+      calories_total_kcal: nutrition.calories_total_kcal ?? null,
+      calories_per_serving_kcal: nutrition.calories_per_serving_kcal ?? null,
+      protein_grams: nutrition.protein_grams ?? null,
+      carbs_grams: nutrition.carbs_grams ?? null,
+      fat_grams: nutrition.fat_grams ?? null,
+      fiber_grams: nutrition.fiber_grams ?? null,
+      difficulty,
+      cuisine: "turkish",
+      tags: tagMatches,
+      freezer_friendly: freezerFriendly,
+      platform_user: platformUser,
+      thumbnail_url: thumbnailUrl,
+      likes_count: 0,
+      comments_count: 0,
+    };
+
+    console.log(`[Scrape] Parsed: ${title} (${ingredientsWithMeasures.length} ingredients, ${cookingTimeMinutes}dk)`);
+    res.json(result);
+  } catch (err: any) {
+    console.error("[Scrape] Error:", err.message || err);
+    res.status(500).json({ error: "Scraping failed", detail: err.message });
+  }
+});
+
+function decodeHTMLEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(parseInt(code)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, code) => String.fromCharCode(parseInt(code, 16)));
+}
+
+function parseIngredientLine(raw: string): { name: string; amount: string } {
+  // Patterns: "4 su bardağı un", "1 adet yumurta", "400 g kıyma", "Sarımsaklı yoğurt"
+  const amountMatch = raw.match(
+    /^([\d½¼¾⅓⅔.,/]+\s*(?:su bardağı|çay bardağı|yemek kaşığı|tatlı kaşığı|çay kaşığı|adet|kg|g|ml|lt|litre|paket|demet|diş|dal|dilim|avuç|tutam|bardak|fincan|kaşık|porsiyon|büyük|küçük|orta boy|orta)\s*)/i
+  );
+  if (amountMatch) {
+    return {
+      amount: amountMatch[1].trim(),
+      name: raw.slice(amountMatch[0].length).trim(),
+    };
+  }
+  // Simple number prefix: "2 adet soğan" already caught, try just number
+  const simpleMatch = raw.match(/^([\d½¼¾⅓⅔.,/]+\s*)/);
+  if (simpleMatch && raw.length > simpleMatch[0].length) {
+    return {
+      amount: simpleMatch[1].trim(),
+      name: raw.slice(simpleMatch[0].length).trim(),
+    };
+  }
+  // No amount (e.g. "Sarımsaklı yoğurt", "Kuru nane")
+  return { amount: "", name: raw };
+}
+
 // Analyze recipe from video content
 app.post("/ai/analyze", async (req, res) => {
   try {
@@ -1487,11 +1882,75 @@ app.post("/ai/meal-plan", async (req, res) => {
       ...req.body,
       available_recipes: availableRecipes,
     });
+
+    // Normalize ingredient casing: capitalize first letter
+    if (result.days) {
+      for (const day of result.days) {
+        for (const meal of day.meals ?? []) {
+          if (meal.ingredients) {
+            meal.ingredients = meal.ingredients.map((ing: string) =>
+              ing.charAt(0).toUpperCase() + ing.slice(1)
+            );
+          }
+        }
+      }
+      if (result.shopping_list) {
+        result.shopping_list = result.shopping_list.map((item: string) =>
+          item.charAt(0).toUpperCase() + item.slice(1)
+        );
+      }
+    }
+
     res.json(result);
   } catch (err: any) {
     console.error("[AI MealPlan]", err.message || err);
     res.status(500).json({ error: "Meal plan generation failed" });
   }
+});
+
+// Copy one user's recipes to all other users
+app.post("/admin/share-recipes", async (req, res) => {
+  const { source_user_id } = req.body;
+  if (!source_user_id) {
+    res.status(400).json({ error: "source_user_id required" });
+    return;
+  }
+
+  // Get all recipe IDs for the source user
+  const sourceRecipes = await db
+    .select({ recipeId: userRecipes.recipeId })
+    .from(userRecipes)
+    .where(eq(userRecipes.userId, source_user_id));
+
+  if (sourceRecipes.length === 0) {
+    res.status(404).json({ error: "No recipes found for source user" });
+    return;
+  }
+
+  const recipeIds = sourceRecipes.map((r) => r.recipeId);
+
+  // Get all users except the source
+  const allUsers = await db.select({ clerkId: users.clerkId }).from(users);
+  const targetUsers = allUsers.filter((u) => u.clerkId !== source_user_id);
+
+  let created = 0;
+  for (const user of targetUsers) {
+    for (const recipeId of recipeIds) {
+      await db
+        .insert(userRecipes)
+        .values({ userId: user.clerkId, recipeId })
+        .onConflictDoNothing();
+      created++;
+    }
+  }
+
+  console.log(`[Admin] Shared ${recipeIds.length} recipes from ${source_user_id} to ${targetUsers.length} users (${created} mappings)`);
+  res.json({
+    source_user: source_user_id,
+    recipes_count: recipeIds.length,
+    target_users_count: targetUsers.length,
+    mappings_created: created,
+  });
 });
 
 // Seed predefined tags on startup

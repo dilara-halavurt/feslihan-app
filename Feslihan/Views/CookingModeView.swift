@@ -1,13 +1,17 @@
 import SwiftUI
+import ClerkKit
 
 struct CookingModeView: View {
     let title: String
     let steps: [CookingStep]
+    var recipeId: String? = nil
+    var sourceURL: String? = nil
 
     @State private var currentIndex = 0
     @State private var timerSeconds: Int? = nil
     @State private var timerRemaining: Int = 0
     @State private var timerActive = false
+    @State private var showReview = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -107,7 +111,7 @@ struct CookingModeView: View {
 
                     if currentIndex == steps.count - 1 {
                         Button {
-                            dismiss()
+                            showReview = true
                         } label: {
                             Text("Tamamlandı")
                                 .font(.system(size: 17, weight: .bold, design: .rounded))
@@ -152,6 +156,13 @@ struct CookingModeView: View {
             if timerRemaining == 0 {
                 timerActive = false
             }
+        }
+        .sheet(isPresented: $showReview, onDismiss: { dismiss() }) {
+            RecipeReviewSheet(recipeTitle: title, recipeId: recipeId, sourceURL: sourceURL, onDone: {
+                showReview = false
+            })
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -200,6 +211,134 @@ struct CookingModeView: View {
         let m = seconds / 60
         let s = seconds % 60
         return String(format: "%d:%02d", m, s)
+    }
+}
+
+// MARK: - Recipe Review Sheet
+
+struct RecipeReviewSheet: View {
+    let recipeTitle: String
+    let recipeId: String?
+    var sourceURL: String? = nil
+    var existingReview: UserReviewDTO? = nil
+    let onDone: () -> Void
+
+    @State private var rating: Int
+    @State private var comment: String
+    @State private var isSaving = false
+    @State private var resolvedRecipeId: String?
+
+    init(recipeTitle: String, recipeId: String?, sourceURL: String? = nil, existingReview: UserReviewDTO? = nil, onDone: @escaping () -> Void) {
+        self.recipeTitle = recipeTitle
+        self.recipeId = recipeId
+        self.sourceURL = sourceURL
+        self.existingReview = existingReview
+        self.onDone = onDone
+        _rating = State(initialValue: existingReview?.rating ?? 0)
+        _comment = State(initialValue: existingReview?.comment ?? "")
+    }
+
+    var body: some View {
+        VStack(spacing: 24) {
+            VStack(spacing: 8) {
+                Text("Afiyet olsun!")
+                    .font(.system(size: 24, weight: .semibold, design: .serif))
+                    .foregroundStyle(DS.ink)
+
+                Text(recipeTitle)
+                    .font(.system(size: 15))
+                    .foregroundStyle(DS.smoke)
+            }
+            .padding(.top, 20)
+
+            // Star rating
+            HStack(spacing: 12) {
+                ForEach(1...5, id: \.self) { star in
+                    Button {
+                        withAnimation(.spring(response: 0.2)) {
+                            rating = star
+                        }
+                    } label: {
+                        Image(systemName: star <= rating ? "star.fill" : "star")
+                            .font(.system(size: 36))
+                            .foregroundStyle(star <= rating ? DS.honey : DS.stone)
+                    }
+                }
+            }
+
+            // Comment
+            TextField("Bir notun var mı? (opsiyonel)", text: $comment, axis: .vertical)
+                .font(.system(size: 15))
+                .lineLimit(2...4)
+                .padding(14)
+                .background(DS.sand)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 20)
+
+            Spacer()
+
+            // Buttons
+            VStack(spacing: 10) {
+                Button(action: submit) {
+                    HStack(spacing: 8) {
+                        if isSaving {
+                            ProgressView().tint(.white)
+                        } else {
+                            Text("Gönder")
+                                .font(.buttonFont())
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .foregroundStyle(DS.flour)
+                    .background(rating > 0 ? DS.ember : DS.stone)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .disabled(rating == 0 || isSaving)
+
+                Button("Atla") {
+                    onDone()
+                }
+                .font(.label())
+                .foregroundStyle(DS.dust)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
+        }
+        .background(DS.cream)
+        .task {
+            // If no recipeId, try to resolve from sourceURL
+            if recipeId == nil, let url = sourceURL {
+                if let dto = await APIService.lookup(url: url) {
+                    resolvedRecipeId = dto.id
+                    print("[Review] Resolved recipeId: \(dto.id ?? "nil") from URL")
+                }
+            }
+        }
+    }
+
+    private var effectiveRecipeId: String? {
+        recipeId ?? resolvedRecipeId
+    }
+
+    private func submit() {
+        guard rating > 0 else { return }
+        isSaving = true
+        Task {
+            if let rid = effectiveRecipeId,
+               let userId = Clerk.shared.user?.id {
+                let success = await APIService.submitReview(
+                    recipeId: rid,
+                    userId: userId,
+                    rating: rating,
+                    comment: comment.isEmpty ? nil : comment
+                )
+                print("[Review] Submit \(success ? "OK" : "FAILED") for recipe \(rid)")
+            } else {
+                print("[Review] No recipeId or userId, skipping save")
+            }
+            onDone()
+        }
     }
 }
 

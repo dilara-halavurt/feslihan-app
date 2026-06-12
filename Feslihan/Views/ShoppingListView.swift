@@ -62,11 +62,11 @@ struct ShoppingListView: View {
                             .font(.system(size: 48, weight: .light))
                             .foregroundStyle(DS.dust)
 
-                        Text("Listeniz bos")
+                        Text("Listeniz boş")
                             .font(.displayTitle())
                             .foregroundStyle(DS.ink)
 
-                        Text("Alisveris listesine malzeme ekleyin")
+                        Text("Alışveriş listesine malzeme ekleyin")
                             .font(.bodyText())
                             .foregroundStyle(DS.smoke)
                             .multilineTextAlignment(.center)
@@ -87,51 +87,70 @@ struct ShoppingListView: View {
                     Spacer()
                 } else {
                     ScrollView {
-                        VStack(spacing: 16) {
+                        VStack(spacing: 0) {
                             // Unchecked items
                             if !uncheckedItems.isEmpty {
-                                VStack(spacing: 8) {
-                                    HStack {
-                                        Text("Alinacaklar")
-                                            .font(.label())
-                                            .foregroundStyle(DS.smoke)
-                                        Spacer()
-                                        Text("\(uncheckedItems.count)")
-                                            .font(.label())
-                                            .foregroundStyle(DS.smoke)
-                                    }
+                                HStack {
+                                    Text("Alınacaklar")
+                                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(DS.smoke)
+                                    Spacer()
+                                    Text("\(uncheckedItems.count) ürün")
+                                        .font(.captionText())
+                                        .foregroundStyle(DS.dust)
+                                }
+                                .padding(.bottom, 8)
 
-                                    ForEach(uncheckedItems) { item in
+                                VStack(spacing: 0) {
+                                    ForEach(Array(uncheckedItems.enumerated()), id: \.element.id) { index, item in
                                         ShoppingItemRow(
                                             item: item,
                                             onToggle: { Task { await toggleItem(item) } },
                                             onDelete: { Task { await deleteItem(item) } }
                                         )
+                                        if index < uncheckedItems.count - 1 {
+                                            Divider()
+                                                .background(DS.stone)
+                                                .padding(.leading, 49)
+                                        }
                                     }
                                 }
+                                .background(DS.flour)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                                .shadow(color: DS.shadowCard, radius: 4, y: 2)
                             }
 
                             // Checked items
                             if !checkedItems.isEmpty {
-                                VStack(spacing: 8) {
-                                    HStack {
-                                        Text("Alinanlar")
-                                            .font(.label())
-                                            .foregroundStyle(DS.smoke)
-                                        Spacer()
-                                        Text("\(checkedItems.count)")
-                                            .font(.label())
-                                            .foregroundStyle(DS.smoke)
-                                    }
+                                HStack {
+                                    Text("Alınanlar")
+                                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(DS.smoke)
+                                    Spacer()
+                                    Text("\(checkedItems.count) ürün")
+                                        .font(.captionText())
+                                        .foregroundStyle(DS.dust)
+                                }
+                                .padding(.top, 22)
+                                .padding(.bottom, 8)
 
-                                    ForEach(checkedItems) { item in
+                                VStack(spacing: 0) {
+                                    ForEach(Array(checkedItems.enumerated()), id: \.element.id) { index, item in
                                         ShoppingItemRow(
                                             item: item,
                                             onToggle: { Task { await toggleItem(item) } },
                                             onDelete: { Task { await deleteItem(item) } }
                                         )
+                                        if index < checkedItems.count - 1 {
+                                            Divider()
+                                                .background(DS.stone)
+                                                .padding(.leading, 49)
+                                        }
                                     }
                                 }
+                                .background(DS.flour)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                                .shadow(color: DS.shadowCard, radius: 4, y: 2)
                             }
                         }
                         .padding(.horizontal, 20)
@@ -198,42 +217,40 @@ private struct ShoppingItemRow: View {
     let onDelete: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 13) {
             Button(action: onToggle) {
-                Image(systemName: item.is_checked ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22))
-                    .foregroundStyle(item.is_checked ? DS.ember : DS.dust)
+                ZStack {
+                    Circle()
+                        .fill(item.is_checked ? DS.ember : .clear)
+                        .frame(width: 24, height: 24)
+                    if !item.is_checked {
+                        Circle()
+                            .stroke(DS.stone, lineWidth: 2)
+                            .frame(width: 24, height: 24)
+                    }
+                    if item.is_checked {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(DS.flour)
+                    }
+                }
             }
+            .buttonStyle(.plain)
 
             Text(item.ingredient_name)
-                .font(.sectionHeader())
-                .foregroundStyle(item.is_checked ? DS.smoke : DS.ink)
-                .strikethrough(item.is_checked, color: DS.smoke)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(item.is_checked ? DS.dust : DS.ink)
+                .strikethrough(item.is_checked, color: DS.dust)
+                .lineLimit(1)
 
             Spacer()
-
-            if let tier = item.price_tier {
-                Text(priceTierEmoji(tier))
-                    .font(.captionText())
-            }
-
-            Button(action: onDelete) {
-                Image(systemName: "trash")
-                    .font(.system(size: 14))
-                    .foregroundStyle(DS.smoke)
-            }
         }
-        .padding(12)
-        .background(DS.sand)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    private func priceTierEmoji(_ tier: String) -> String {
-        switch tier {
-        case "cheap": return "₺"
-        case "neutral": return "₺₺"
-        case "expensive": return "₺₺₺"
-        default: return ""
+        .padding(.horizontal, 16)
+        .frame(height: 48)
+        .contextMenu {
+            Button(role: .destructive, action: onDelete) {
+                Label("Sil", systemImage: "trash")
+            }
         }
     }
 }

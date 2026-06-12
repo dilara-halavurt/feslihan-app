@@ -1,4 +1,5 @@
 import SwiftUI
+import ClerkKit
 
 struct RecipeDetailView: View {
     @Bindable var recipe: Recipe
@@ -7,177 +8,245 @@ struct RecipeDetailView: View {
     @State private var servingMultiplier: Double = 1.0
     @State private var recipeCost: RecipeCostDTO?
     @State private var showCookingMode = false
+    @State private var showReview = false
     @State private var showCost = false
     @State private var isLoadingCost = false
     @State private var backendRecipeId: String?
+    @State private var userReview: UserReviewDTO?
 
     private let multiplierOptions: [(label: String, value: Double)] = [
         ("1/2x", 0.5), ("1x", 1.0), ("2x", 2.0), ("3x", 3.0), ("4x", 4.0), ("6x", 6.0)
     ]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // Hero image - tappable to open video
-                if let data = recipe.thumbnailData,
-                   let uiImage = UIImage(data: data) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 380)
-                        .clipped()
-                        .onTapGesture { openVideo() }
-                }
-
-                VStack(alignment: .leading, spacing: 24) {
-                    // Recipe owner
-                    if let username = recipe.platformUser, !username.isEmpty {
-                        Button {
-                            let profileURL: String
-                            switch recipe.platform {
-                            case "tiktok":
-                                profileURL = "https://www.tiktok.com/@\(username)"
-                            case "x":
-                                profileURL = "https://x.com/\(username)"
-                            default:
-                                profileURL = "https://www.instagram.com/\(username)/"
-                            }
-                            if let url = URL(string: profileURL) {
-                                UIApplication.shared.open(url)
-                            }
-                        } label: {
-                            HStack(spacing: 10) {
-                                if let picData = profilePicData,
-                                   let uiImg = UIImage(data: picData) {
-                                    Image(uiImage: uiImg)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(width: 36, height: 36)
-                                        .clipShape(Circle())
-                                } else {
-                                    Image(systemName: "person.circle.fill")
-                                        .font(.system(size: 36))
-                                        .foregroundStyle(DS.dust)
-                                }
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("@\(username)")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundStyle(DS.ink)
-                                    if let platform = recipe.platform {
-                                        Text(platform == "tiktok" ? "TikTok" : platform == "x" ? "X" : "Instagram")
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundStyle(DS.smoke)
-                                    }
-                                }
-
-                                Spacer()
-
-                                Image(systemName: "arrow.up.right")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(DS.dust)
-                            }
-                            .padding(12)
-                            .background(DS.sand)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Hero image - tappable to open video
+                    if let data = recipe.thumbnailData,
+                       let uiImage = UIImage(data: data) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 380)
+                            .clipped()
+                            .onTapGesture { openVideo() }
                     }
 
-                    // Title + meta
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(recipe.title)
-                            .font(.system(size: 28, weight: .semibold, design: .serif))
-                            .foregroundStyle(DS.ink)
-
-                        HStack(spacing: 12) {
-                            if let minutes = recipe.cookingTimeMinutes {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "clock")
-                                    Text(formatMinutes(minutes))
+                    VStack(alignment: .leading, spacing: 24) {
+                        // Recipe owner
+                        if let username = recipe.platformUser, !username.isEmpty {
+                            Button {
+                                let profileURL: String
+                                switch recipe.platform {
+                                case "tiktok":
+                                    profileURL = "https://www.tiktok.com/@\(username)"
+                                case "x":
+                                    profileURL = "https://x.com/\(username)"
+                                default:
+                                    profileURL = "https://www.instagram.com/\(username)/"
                                 }
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(DS.smoke)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
+                                if let url = URL(string: profileURL) {
+                                    UIApplication.shared.open(url)
+                                }
+                            } label: {
+                                HStack(spacing: 10) {
+                                    if let picData = profilePicData,
+                                       let uiImg = UIImage(data: picData) {
+                                        Image(uiImage: uiImg)
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                            .frame(width: 36, height: 36)
+                                            .clipShape(Circle())
+                                    } else {
+                                        Image(systemName: "person.circle.fill")
+                                            .font(.system(size: 36))
+                                            .foregroundStyle(DS.dust)
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("@\(username)")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundStyle(DS.ink)
+                                        if let platform = recipe.platform {
+                                            Text(platform == "tiktok" ? "TikTok" : platform == "x" ? "X" : "Instagram")
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundStyle(DS.smoke)
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "arrow.up.right")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(DS.dust)
+                                }
+                                .padding(12)
                                 .background(DS.sand)
-                                .clipShape(Capsule())
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
-                            if let cuisine = recipe.cuisine {
-                                Text(cuisine.capitalized)
+                        }
+
+                        // Title + meta
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(recipe.title)
+                                .font(.system(size: 28, weight: .semibold, design: .serif))
+                                .foregroundStyle(DS.ink)
+
+                            HStack(spacing: 12) {
+                                if let minutes = recipe.cookingTimeMinutes {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "clock")
+                                        Text(formatMinutes(minutes))
+                                    }
                                     .font(.system(size: 13, weight: .medium))
                                     .foregroundStyle(DS.smoke)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
                                     .background(DS.sand)
                                     .clipShape(Capsule())
+                                }
+                                if let cuisine = recipe.cuisine {
+                                    Text(cuisine.capitalized)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(DS.smoke)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .background(DS.sand)
+                                        .clipShape(Capsule())
+                                }
                             }
                         }
+
+                        // Underlined text tabs
+                        HStack(spacing: 22) {
+                            tabButton(title: "Malzemeler", index: 0)
+                            tabButton(title: "Yapılış", index: 1)
+                            tabButton(title: "Besin", index: 2)
+                        }
+                        .padding(.bottom, 1)
+
+                        // Tab content
+                        switch selectedTab {
+                        case 0:
+                            ingredientsView
+                        case 1:
+                            instructionsView
+                        default:
+                            macrosView
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
+                    .padding(.bottom, 40)
+                }
+            }
+
+            // Sticky bottom bar
+            VStack(spacing: 8) {
+                // Action buttons
+                HStack(spacing: 10) {
+                    Button { showCookingMode = true } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 16))
+                            Text("Pişirmeye Başla")
+                                .font(.buttonFont())
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .foregroundStyle(DS.flour)
+                        .background(DS.ember)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .shadow(color: DS.shadowButton, radius: 8, y: 4)
                     }
 
-                    // Underlined text tabs
-                    HStack(spacing: 22) {
-                        tabButton(title: "Malzemeler", index: 0)
-                        tabButton(title: "Yapılış", index: 1)
-                        tabButton(title: "Besin", index: 2)
-                    }
-                    .padding(.bottom, 1)
-
-                    // Tab content
-                    switch selectedTab {
-                    case 0:
-                        ingredientsView
-                    case 1:
-                        instructionsView
-                    default:
-                        macrosView
-                    }
-
-                    // Action buttons
-                    HStack(spacing: 10) {
-                        Button { showCookingMode = true } label: {
+                    if recipe.sourceURL != nil {
+                        Button { openVideo() } label: {
                             HStack(spacing: 8) {
-                                Image(systemName: "flame.fill")
-                                    .font(.system(size: 16))
-                                Text("Pişirmeye Başla")
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 14))
+                                Text("Video")
                                     .font(.buttonFont())
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 50)
-                            .foregroundStyle(DS.flour)
-                            .background(DS.ember)
+                            .foregroundStyle(DS.ember)
+                            .background(DS.emberLight)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .shadow(color: DS.shadowButton, radius: 8, y: 4)
-                        }
-
-                        if recipe.sourceURL != nil {
-                            Button { openVideo() } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "play.fill")
-                                        .font(.system(size: 14))
-                                    Text("Video")
-                                        .font(.buttonFont())
-                                }
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 50)
-                                .foregroundStyle(DS.ember)
-                                .background(DS.emberLight)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                            }
                         }
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-                .padding(.bottom, 40)
+
+                // User's review or "I cooked this" button
+                if let review = userReview {
+                    HStack(spacing: 10) {
+                        HStack(spacing: 3) {
+                            ForEach(1...5, id: \.self) { star in
+                                Image(systemName: star <= review.rating ? "star.fill" : "star")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(star <= review.rating ? DS.honey : DS.stone)
+                            }
+                        }
+
+                        if let comment = review.comment, !comment.isEmpty {
+                            Text(comment)
+                                .font(.system(size: 13, design: .serif))
+                                .italic()
+                                .foregroundStyle(DS.smoke)
+                                .lineLimit(1)
+                        }
+
+                        Spacer()
+
+                        Button { showReview = true } label: {
+                            Text("Düzenle")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(DS.ember)
+                        }
+                    }
+                    .padding(12)
+                    .background(DS.sand)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                } else {
+                    Button { showReview = true } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 15))
+                            Text("Bu tarifi pişirdim")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 40)
+                        .foregroundStyle(DS.ember)
+                        .background(DS.emberLight)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                }
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+            .padding(.bottom, 16)
+            .background(DS.cream)
         }
         .ignoresSafeArea(edges: .top)
         .fullScreenCover(isPresented: $showCookingMode) {
             CookingModeView(
                 title: recipe.title,
-                steps: CookingStep.parse(from: recipe.instructions)
+                steps: CookingStep.parse(from: recipe.instructions),
+                recipeId: backendRecipeId,
+                sourceURL: recipe.sourceURL
             )
+        }
+        .sheet(isPresented: $showReview, onDismiss: {
+            Task { await loadUserReview() }
+        }) {
+            RecipeReviewSheet(recipeTitle: recipe.title, recipeId: backendRecipeId, sourceURL: recipe.sourceURL, existingReview: userReview, onDone: {
+                showReview = false
+            })
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
         }
         .navigationBarBackButtonHidden(true)
         .toolbar {
@@ -208,6 +277,9 @@ struct RecipeDetailView: View {
                 backendRecipeId = dto.id
             }
 
+            // Fetch user's review for this recipe
+            await loadUserReview()
+
             // Fetch profile picture
             guard let username = recipe.platformUser, !username.isEmpty else { return }
             if let user = await APIService.fetchCreator(username: username),
@@ -219,6 +291,13 @@ struct RecipeDetailView: View {
     }
 
     @Environment(\.dismiss) private var dismiss
+
+    private func loadUserReview() async {
+        guard let recipeId = backendRecipeId,
+              let userId = Clerk.shared.user?.id else { return }
+        let reviews = await APIService.fetchUserReviews(userId: userId)
+        userReview = reviews.first(where: { $0.recipe_id == recipeId })
+    }
 
     private func formatMinutes(_ minutes: Int) -> String {
         if minutes >= 60 {

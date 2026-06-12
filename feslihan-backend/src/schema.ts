@@ -41,6 +41,7 @@ export const platformEnum = pgEnum("platform_type", [
   "instagram",
   "tiktok",
   "x",
+  "nefisyemektarifleri",
   "other",
 ]);
 
@@ -135,6 +136,10 @@ export const ingredients = pgTable("ingredients", {
   pricePerUnit: real("price_per_unit"),
   priceUnit: varchar("price_unit", { length: 20 }),
   priceUpdatedAt: timestamp("price_updated_at", { withTimezone: true }),
+  // Unit conversions
+  defaultUnit: varchar("default_unit", { length: 10 }),  // 'g', 'ml', 'adet'
+  densityGMl: real("density_g_ml"),                       // grams per ml (for volume→weight)
+  gramPerAdet: real("gram_per_adet"),                     // grams per 1 piece (for countable items)
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -216,6 +221,21 @@ export const userShoppingList = pgTable("user_shopping_list", {
     .references(() => ingredients.id),
   isChecked: boolean("is_checked").notNull().default(false),
   addedAt: timestamp("added_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const recipeReviews = pgTable("recipe_reviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id", { length: 255 })
+    .notNull()
+    .references(() => users.clerkId),
+  recipeId: uuid("recipe_id")
+    .notNull()
+    .references(() => recipes.id),
+  rating: integer("rating").notNull(),
+  comment: text("comment"),
+  createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });

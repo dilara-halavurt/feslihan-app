@@ -19,6 +19,7 @@
 		6350E98712F1A658086F07D8 /* SavedMealPlansView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A798F2EB0F1CF7C9232C30E /* SavedMealPlansView.swift */; };
 		69927C502E5209312F0BB057 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9CA009784BB90E49A89A1526 /* Assets.xcassets */; };
 		788BA106E0E3C65E6216BBEB /* ModeSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 691687B0715514978BE8BBB1 /* ModeSelectionView.swift */; };
+		0A1B2C3D4E5F6A7B8C9D0E1F /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F2E3D4C5B6A7980A1B2C3D4 /* OnboardingView.swift */; };
 		7CDAAFFF5066F0AC278E13E3 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDCB2ED1E9EBB185B78FFDCC /* RootView.swift */; };
 		805E8B6A68BCAE104CB89DF4 /* SubscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67C8FCE73D37CA447073D5AB /* SubscriptionService.swift */; };
 		85AB5718008B483295110CCD /* FeslihanError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CB25DF3D77ECB2C7BBCC1A7 /* FeslihanError.swift */; };
@@ -58,6 +59,7 @@
 		61A77A661A1D0EFE85F7EB23 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		67C8FCE73D37CA447073D5AB /* SubscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionService.swift; sourceTree = "<group>"; };
 		691687B0715514978BE8BBB1 /* ModeSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeSelectionView.swift; sourceTree = "<group>"; };
+		1F2E3D4C5B6A7980A1B2C3D4 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		6E2D9D3DE94595547334FEC3 /* ClaudeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeService.swift; sourceTree = "<group>"; };
 		772199D387CB7CFE61C07D92 /* APIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIService.swift; sourceTree = "<group>"; };
 		7BC2D60E19F246519FA87D14 /* CaptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionService.swift; sourceTree = "<group>"; };
@@ -145,6 +147,7 @@
 				05085FE6F97FB2C1E7E27A3A /* MealEditSheet.swift */,
 				C78BB5E44642C36A066EAA62 /* MealPrepView.swift */,
 				691687B0715514978BE8BBB1 /* ModeSelectionView.swift */,
+				1F2E3D4C5B6A7980A1B2C3D4 /* OnboardingView.swift */,
 				D1E2F3A4B5C6D7E8F9A0B1C2 /* PantryView.swift */,
 				F992BF94307474C2BFF7C205 /* PaywallView.swift */,
 				2C106C18CA48DECC3172126F /* RecipeDetailView.swift */,
@@ -256,6 +259,7 @@
 				3A7C6E58826E07BEC2FA782D /* MealEditSheet.swift in Sources */,
 				B47297C2AFD8D248C21FD1D3 /* MealPrepView.swift in Sources */,
 				788BA106E0E3C65E6216BBEB /* ModeSelectionView.swift in Sources */,
+				0A1B2C3D4E5F6A7B8C9D0E1F /* OnboardingView.swift in Sources */,
 				BFDE8A00D297EFAFEE20D2C7 /* Movie.swift in Sources */,
 				A1B2C3D4E5F6A7B8C9D0E1F2 /* PantryView.swift in Sources */,
 				B3C4D5E6F7A8B9C0D1E2F3A4 /* ShoppingListView.swift in Sources */,
