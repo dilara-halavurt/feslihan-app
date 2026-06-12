@@ -122,6 +122,7 @@ struct SavedPlanItem: Identifiable, Codable {
     let name: String
     let plan: SavedPlanData
     let recipe_ids: [String]?
+    let shopping_list: [String]?
     let created_at: String
 
     var createdDate: Date? {
@@ -166,7 +167,7 @@ struct SavedPlanItem: Identifiable, Codable {
 
 struct SavedPlanData: Codable {
     let days: [SavedPlanDay]?
-    let shopping_list: [String]?
+    let shopping_list: [String]?  // Legacy: old plans stored this inside plan JSON
     let avg_calories_per_day: Int?
 }
 
@@ -177,6 +178,8 @@ struct SavedPlanDay: Codable {
 
 struct SavedPlanMeal: Codable {
     let meal_type: String?
+    let recipe_ids: [String]?
+    // Legacy/fallback fields for plans with AI-invented recipes
     let name: String?
     let description: String?
     let calories: Int?
@@ -281,8 +284,9 @@ private struct SavedPlanDetailSheet: View {
     @State private var addingToDayId: String?
     @State private var newMealForDay: MealPlanMeal?
     @State private var userRecipes: [RecipeDTO] = []
-    @State private var ingredientData: [String: IngredientDTO] = [:]
+    @State private var recipeById: [String: RecipeDTO] = [:]
     @State private var pantryNames: Set<String> = []
+    @State private var shoppingListNames: Set<String> = []
     @State private var isSaving = false
     @State private var hasChanges = false
     @State private var selectedTab = 0
@@ -293,7 +297,7 @@ private struct SavedPlanDetailSheet: View {
                 // Summary
                 HStack(spacing: 8) {
                     StatPill(icon: "fork.knife", value: "\(days.flatMap(\.meals).count)", label: "Tarif")
-                    StatPill(icon: "cart", value: "\(currentShoppingListNames.count)", label: "Malzeme")
+                    StatPill(icon: "cart", value: "\((plan.shopping_list ?? plan.plan.shopping_list ?? []).count)", label: "Malzeme")
                     StatPill(icon: "flame", value: plan.avgCalories > 0 ? "\(plan.avgCalories)" : "-", label: "kcal/gün")
                 }
                 .padding(.horizontal, 20)
@@ -353,20 +357,19 @@ private struct SavedPlanDetailSheet: View {
                 }
             }
             .sheet(item: $editingMeal) { meal in
-                MealEditSheet(meal: meal, userRecipes: userRecipes) { updated in
+                MealEditSheet(meal: meal, userRecipes: userRecipes, recipeById: recipeById) { updated in
                     replaceMeal(meal, with: updated)
                     editingMeal = nil
                 }
             }
             .sheet(item: $newMealForDay) { meal in
-                MealEditSheet(meal: meal, userRecipes: userRecipes) { updated in
+                MealEditSheet(meal: meal, userRecipes: userRecipes, recipeById: recipeById) { updated in
                     addNewMealToDay(updated)
                     newMealForDay = nil
                     addingToDayId = nil
                 }
             }
             .task {
-                // Convert saved data to editable model
                 days = (plan.plan.days ?? []).enumerated().map { index, day in
                     MealPlanDay(
                         id: "day-\(index)",
@@ -374,10 +377,11 @@ private struct SavedPlanDetailSheet: View {
                         meals: (day.meals ?? []).map { meal in
                             MealPlanMeal(
                                 mealType: meal.meal_type ?? "",
-                                name: meal.name ?? "",
-                                description: meal.description,
-                                calories: meal.calories,
-                                ingredients: meal.ingredients ?? []
+                                recipeIds: meal.recipe_ids ?? [],
+                                fallbackName: meal.name,
+                                fallbackDescription: meal.description,
+                                fallbackCalories: meal.calories,
+                                fallbackIngredients: meal.ingredients
                             )
                         }
                     )
@@ -385,17 +389,17 @@ private struct SavedPlanDetailSheet: View {
 
                 if let userId = Clerk.shared.user?.id {
                     userRecipes = await APIService.fetchUserRecipes(userId: userId)
-                    let pantryItems = await APIService.fetchPantry(userId: userId)
-                    pantryNames = Set(pantryItems.map { $0.ingredient_name.lowercased() })
-                }
+                    var map: [String: RecipeDTO] = [:]
+                    for r in userRecipes { if let id = r.id { map[id] = r } }
+                    recipeById = map
 
-                // Load ingredient data for unit conversions
-                let allIngredients = await APIService.fetchIngredients()
-                var dataMap: [String: IngredientDTO] = [:]
-                for ing in allIngredients {
-                    dataMap[ing.name.lowercased()] = ing
+                    async let pantryTask = APIService.fetchPantry(userId: userId)
+                    async let shoppingTask = APIService.fetchShoppingList(userId: userId)
+                    let pantryItems = await pantryTask
+                    let shoppingItems = await shoppingTask
+                    pantryNames = Set(pantryItems.map { $0.ingredient_name.lowercased() })
+                    shoppingListNames = Set(shoppingItems.map { $0.ingredient_name.lowercased() })
                 }
-                ingredientData = dataMap
             }
         }
     }
@@ -421,200 +425,12 @@ private struct SavedPlanDetailSheet: View {
         }
     }
 
-    // MARK: - Shopping List (computed from current meals + recipe measures)
+    // MARK: - Shopping List (from AI-generated plan, stored in DB column)
 
-    private struct ShoppingItem: Hashable {
-        let name: String
-        let amount: String
-    }
-
-    // MARK: - Standard Turkish volume measures (ml)
-    private static let volumeToMl: [(pattern: String, ml: Double)] = [
-        ("su bardağı", 200), ("su bardagi", 200),
-        ("çay bardağı", 100), ("cay bardagi", 100),
-        ("yemek kaşığı", 15), ("yemek kasigi", 15),
-        ("tatlı kaşığı", 5), ("tatli kasigi", 5),
-        ("çay kaşığı", 2.5), ("cay kasigi", 2.5),
-        ("cup", 240),
-    ]
-
-    private var currentShoppingList: [ShoppingItem] {
-        // Collect recipe usage counts
-        var titleCounts: [String: Int] = [:]
-        for day in days {
-            for meal in day.meals {
-                for part in meal.name.components(separatedBy: " + ") {
-                    let title = part.trimmingCharacters(in: .whitespaces)
-                    titleCounts[title, default: 0] += 1
-                }
-            }
-        }
-
-        // Collect ALL amounts per ingredient
-        var measuresByName: [String: [String]] = [:]
-        for recipe in userRecipes {
-            guard let count = titleCounts[recipe.title], count > 0 else { continue }
-            for ing in recipe.ingredients_with_measures {
-                let name = (ing["name"] ?? "").lowercased()
-                let amount = ing["amount"] ?? ""
-                guard !name.isEmpty, !amount.isEmpty else { continue }
-                for _ in 0..<count {
-                    measuresByName[name, default: []].append(amount)
-                }
-            }
-        }
-
-        // Deduplicate and aggregate
-        var seen = Set<String>()
-        var result: [ShoppingItem] = []
-        for day in days {
-            for meal in day.meals {
-                for ingredient in meal.ingredients {
-                    let trimmed = ingredient.trimmingCharacters(in: .whitespaces)
-                    let key = trimmed.lowercased()
-                    guard !key.isEmpty, !seen.contains(key) else { continue }
-                    seen.insert(key)
-                    let displayName = String(trimmed.prefix(1)).uppercased() + trimmed.dropFirst()
-                    let amounts = measuresByName[key] ?? []
-                    let ing = ingredientData[key]
-                    let combinedAmount: String
-                    if amounts.isEmpty {
-                        combinedAmount = ""
-                    } else if amounts.count == 1 {
-                        combinedAmount = amounts[0]
-                    } else {
-                        combinedAmount = aggregateAmounts(amounts, ingredient: ing)
-                    }
-                    result.append(ShoppingItem(name: displayName, amount: combinedAmount))
-                }
-            }
-        }
-        return result.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    // MARK: - Amount Parsing & Aggregation
-
-    private func parseAmount(_ amount: String) -> (value: Double, unit: String)? {
-        let pattern = #"^(\d+(?:[.,/]\d+)?)\s*(.*)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: amount, range: NSRange(location: 0, length: (amount as NSString).length)),
-              let numRange = Range(match.range(at: 1), in: amount) else { return nil }
-        let numStr = String(amount[numRange]).replacingOccurrences(of: ",", with: ".")
-        let unit = match.range(at: 2).length > 0
-            ? String(amount[Range(match.range(at: 2), in: amount)!]).trimmingCharacters(in: .whitespaces)
-            : ""
-        if numStr.contains("/") {
-            let parts = numStr.split(separator: "/")
-            guard parts.count == 2, let n = Double(parts[0]), let d = Double(parts[1]), d != 0 else { return nil }
-            return (n / d, unit)
-        }
-        guard let value = Double(numStr) else { return nil }
-        return (value, unit)
-    }
-
-    /// Convert amount to grams using density and standard volumes
-    private func toGrams(_ value: Double, unit: String, ingredient: IngredientDTO?) -> Double? {
-        let u = unit.lowercased()
-        let density = ingredient?.density_g_ml ?? 1.0
-
-        // Weight units → grams directly
-        if u == "g" || u == "gr" || u == "gram" { return value }
-        if u == "kg" { return value * 1000 }
-
-        // Volume units → ml → grams via density
-        if u == "ml" { return value * density }
-        if u == "l" || u == "lt" || u == "litre" { return value * 1000 * density }
-
-        // Turkish volume measures → ml → grams
-        for (pattern, ml) in Self.volumeToMl {
-            if u.contains(pattern) {
-                return value * ml * density
-            }
-        }
-
-        // "adet" / "tane" / bare number → grams via gram_per_adet
-        if u == "adet" || u == "tane" || u == "" {
-            if let gpa = ingredient?.gram_per_adet { return value * gpa }
-            return nil
-        }
-
-        // Other units we can't convert (demet, tutam, diş, etc.)
-        return nil
-    }
-
-    /// Convert grams back to best display unit
-    private func formatFromGrams(_ grams: Double, ingredient: IngredientDTO?) -> String {
-        let isLiquid = ingredient?.default_unit == "ml"
-        let density = ingredient?.density_g_ml ?? 1.0
-
-        if isLiquid {
-            let ml = grams / density
-            if ml >= 1000 {
-                return formatNum(ml / 1000) + " litre"
-            }
-            return formatNum(ml) + " ml"
-        }
-
-        // Prefer "adet" for countable items
-        if ingredient?.default_unit == "adet", let gpa = ingredient?.gram_per_adet, gpa > 0 {
-            let count = grams / gpa
-            if count >= 1 {
-                return formatNum(count) + " adet"
-            }
-        }
-
-        // Weight display
-        if grams >= 1000 {
-            return formatNum(grams / 1000) + " kg"
-        }
-        return formatNum(grams) + " g"
-    }
-
-    private func formatNum(_ n: Double) -> String {
-        if n == n.rounded() && n < 10000 { return String(Int(n)) }
-        return String(format: "%.0f", n)
-    }
-
-    /// Aggregate multiple amounts, converting to a common base unit
-    private func aggregateAmounts(_ amounts: [String], ingredient: IngredientDTO?) -> String {
-        var totalGrams: Double = 0
-        var allConverted = true
-
-        for amount in amounts {
-            if let parsed = parseAmount(amount),
-               let g = toGrams(parsed.value, unit: parsed.unit, ingredient: ingredient) {
-                totalGrams += g
-            } else {
-                allConverted = false
-            }
-        }
-
-        if allConverted && totalGrams > 0 {
-            return formatFromGrams(totalGrams, ingredient: ingredient)
-        }
-
-        // Fallback: sum same-unit amounts
-        var unitGroups: [String: Double] = [:]
-        var unparsed: [String] = []
-        for amount in amounts {
-            if let parsed = parseAmount(amount) {
-                unitGroups[parsed.unit, default: 0] += parsed.value
-            } else {
-                unparsed.append(amount)
-            }
-        }
-        if unitGroups.count == 1, unparsed.isEmpty, let (unit, total) = unitGroups.first {
-            return unit.isEmpty ? formatNum(total) : "\(formatNum(total)) \(unit)"
-        }
-        var parts = unitGroups.sorted(by: { $0.key < $1.key }).map { (unit, total) in
-            unit.isEmpty ? formatNum(total) : "\(formatNum(total)) \(unit)"
-        }
-        parts.append(contentsOf: unparsed)
-        return parts.joined(separator: " + ")
-    }
-
-    private var currentShoppingListNames: [String] {
-        currentShoppingList.map(\.name)
+    private var parsedShoppingList: [ShoppingListItem] {
+        // New plans: shopping_list in separate DB column; old plans: inside plan JSON
+        let list = plan.shopping_list ?? plan.plan.shopping_list ?? []
+        return list.map { ShoppingListItem.parse($0) }
     }
 
     // MARK: - Meal Plan Tab
@@ -660,7 +476,7 @@ private struct SavedPlanDetailSheet: View {
                                                     .padding(.vertical, 2)
                                                     .background(DS.emberLight)
                                                     .clipShape(Capsule())
-                                                Text(meal.name)
+                                                Text(meal.displayName(using: recipeById))
                                                     .font(.system(size: 14, weight: .semibold))
                                                     .foregroundStyle(DS.ink)
                                                     .multilineTextAlignment(.leading)
@@ -678,10 +494,7 @@ private struct SavedPlanDetailSheet: View {
                                     addingToDayId = day.id
                                     newMealForDay = MealPlanMeal(
                                         mealType: "Öğle",
-                                        name: "",
-                                        description: nil,
-                                        calories: nil,
-                                        ingredients: []
+                                        recipeIds: []
                                     )
                                 } label: {
                                     HStack(spacing: 6) {
@@ -716,14 +529,17 @@ private struct SavedPlanDetailSheet: View {
     private func addToShoppingList(_ name: String) {
         Task {
             guard let userId = Clerk.shared.user?.id else { return }
-            _ = await APIService.addToShoppingList(userId: userId, ingredientNames: [name])
+            let success = await APIService.addToShoppingList(userId: userId, ingredientNames: [name])
+            if success {
+                shoppingListNames.insert(name.lowercased())
+            }
         }
     }
 
     private var shoppingListTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if currentShoppingList.isEmpty {
+                if parsedShoppingList.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "cart")
                             .font(.system(size: 40, weight: .light))
@@ -735,7 +551,6 @@ private struct SavedPlanDetailSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 60)
                 } else {
-                    // Legend
                     HStack(spacing: 16) {
                         HStack(spacing: 5) {
                             Circle().fill(DS.ember).frame(width: 8, height: 8)
@@ -752,11 +567,11 @@ private struct SavedPlanDetailSheet: View {
                     .padding(.bottom, 8)
 
                     VStack(spacing: 0) {
-                        ForEach(Array(currentShoppingList.enumerated()), id: \.offset) { index, item in
+                        ForEach(Array(parsedShoppingList.enumerated()), id: \.offset) { index, item in
                             let inPantry = pantryNames.contains(item.name.lowercased())
+                            let inCart = shoppingListNames.contains(item.name.lowercased())
 
                             HStack(spacing: 10) {
-                                // Pantry status dot
                                 Circle()
                                     .fill(inPantry ? DS.ember : DS.tomato)
                                     .frame(width: 9, height: 9)
@@ -774,20 +589,26 @@ private struct SavedPlanDetailSheet: View {
                                 }
 
                                 if !inPantry {
-                                    Button {
-                                        addToShoppingList(item.name)
-                                    } label: {
-                                        Image(systemName: "cart.badge.plus")
+                                    if inCart {
+                                        Image(systemName: "cart.fill.badge.checkmark")
                                             .font(.system(size: 14))
                                             .foregroundStyle(DS.ember)
+                                    } else {
+                                        Button {
+                                            addToShoppingList(item.name)
+                                        } label: {
+                                            Image(systemName: "cart.badge.plus")
+                                                .font(.system(size: 14))
+                                                .foregroundStyle(DS.ember)
+                                        }
+                                        .buttonStyle(.plain)
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
                             .padding(.horizontal, 16)
                             .frame(minHeight: 46)
 
-                            if index < currentShoppingList.count - 1 {
+                            if index < parsedShoppingList.count - 1 {
                                 Divider()
                                     .background(DS.stone)
                                     .padding(.leading, 35)
@@ -799,8 +620,8 @@ private struct SavedPlanDetailSheet: View {
                     .shadow(color: DS.shadowCard, radius: 4, y: 2)
                     .padding(.horizontal, 20)
 
-                    let needCount = currentShoppingList.filter { !pantryNames.contains($0.name.lowercased()) }.count
-                    Text("\(currentShoppingList.count) malzeme · \(needCount) eksik")
+                    let needCount = parsedShoppingList.filter { !pantryNames.contains($0.name.lowercased()) }.count
+                    Text("\(parsedShoppingList.count) malzeme · \(needCount) eksik")
                         .font(.captionText())
                         .foregroundStyle(DS.dust)
                         .frame(maxWidth: .infinity)
@@ -824,7 +645,7 @@ private struct SavedPlanDetailSheet: View {
     private func addNewMealToDay(_ meal: MealPlanMeal) {
         guard let dayId = addingToDayId,
               let dayIndex = days.firstIndex(where: { $0.id == dayId }) else { return }
-        guard !meal.name.isEmpty else { return }
+        guard !meal.recipeIds.isEmpty else { return }
         days[dayIndex].meals.append(meal)
         hasChanges = true
     }
@@ -834,68 +655,48 @@ private struct SavedPlanDetailSheet: View {
         Task {
             defer { isSaving = false }
 
-            guard let url = URL(string: "\(APIService.baseURL)/meal-plans/\(plan.id)") else {
-                print("[SavePlan] Invalid URL")
-                return
-            }
+            guard let url = URL(string: "\(APIService.baseURL)/meal-plans/\(plan.id)") else { return }
 
-            // Rebuild shopping list with measures from recipes
-            let shoppingList = currentShoppingList.map { item in
-                item.amount.isEmpty ? item.name : "\(item.amount) \(item.name)"
-            }
-
-            // Recalculate avg calories
-            let totalDays = days.count
-            let totalCalories = days.flatMap(\.meals).compactMap(\.calories).reduce(0, +)
-            let avgCalories = totalDays > 0 ? totalCalories / totalDays : 0
+            // Collect all recipe IDs
+            let allIds = Array(Set(days.flatMap { $0.meals.flatMap(\.recipeIds) }))
 
             let planData: [String: Any] = [
                 "days": days.map { day in
                     [
                         "day_name": day.name,
                         "meals": day.meals.map { meal in
-                            [
+                            var m: [String: Any] = [
                                 "meal_type": meal.mealType,
-                                "name": meal.name,
-                                "description": meal.description ?? "",
-                                "calories": meal.calories ?? 0,
-                                "ingredients": meal.ingredients
-                            ] as [String: Any]
+                                "recipe_ids": meal.recipeIds
+                            ]
+                            if let n = meal.fallbackName { m["name"] = n }
+                            if let d = meal.fallbackDescription { m["description"] = d }
+                            if let c = meal.fallbackCalories { m["calories"] = c }
+                            if let i = meal.fallbackIngredients { m["ingredients"] = i }
+                            return m as [String: Any]
                         }
                     ] as [String: Any]
                 },
-                "shopping_list": shoppingList,
-                "avg_calories_per_day": avgCalories
+                "avg_calories_per_day": plan.avgCalories
             ]
 
-            let body: [String: Any] = ["plan": planData]
+            let body: [String: Any] = [
+                "plan": planData,
+                "recipe_ids": allIds
+            ]
 
-            guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else {
-                print("[SavePlan] JSON serialization failed")
-                return
-            }
+            guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return }
 
             var request = URLRequest(url: url)
             request.httpMethod = "PUT"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = httpBody
 
-            do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-                if let http = response as? HTTPURLResponse {
-                    print("[SavePlan] Status: \(http.statusCode)")
-                    if http.statusCode == 200 {
-                        hasChanges = false
-                        DispatchQueue.main.async {
-                            onPlanUpdated?()
-                        }
-                    } else {
-                        let responseBody = String(data: data, encoding: .utf8) ?? "no body"
-                        print("[SavePlan] Error response: \(responseBody)")
-                    }
-                }
-            } catch {
-                print("[SavePlan] Network error: \(error)")
+            if let (_, response) = try? await URLSession.shared.data(for: request),
+               let http = response as? HTTPURLResponse,
+               http.statusCode == 200 {
+                hasChanges = false
+                onPlanUpdated?()
             }
         }
     }

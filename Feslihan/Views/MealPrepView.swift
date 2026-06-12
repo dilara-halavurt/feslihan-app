@@ -951,6 +951,7 @@ struct MealPlanResultView: View {
     @State private var expandedDay: String?
     @State private var swappingMeal: MealPlanMeal?
     @State private var userRecipes: [RecipeDTO] = []
+    @State private var recipeById: [String: RecipeDTO] = [:]
     @State private var isSaving = false
     @State private var isSaved = false
     @State private var showShoppingList = false
@@ -1027,7 +1028,7 @@ struct MealPlanResultView: View {
                         // Days
                         LazyVStack(spacing: 8) {
                             ForEach(plan.days) { day in
-                                DayCard(day: day, isExpanded: expandedDay == day.id, onTap: {
+                                DayCard(day: day, recipeById: recipeById, isExpanded: expandedDay == day.id, onTap: {
                                     withAnimation(.spring(response: 0.2)) {
                                         expandedDay = expandedDay == day.id ? nil : day.id
                                     }
@@ -1095,19 +1096,23 @@ struct MealPlanResultView: View {
         }
         .task {
             await loadPlan()
-            // Fetch user recipes for swapping
+            // Fetch user recipes for swapping and display
             if let userId = ClerkKit.Clerk.shared.user?.id {
                 userRecipes = await APIService.fetchUserRecipes(userId: userId)
+                var map: [String: RecipeDTO] = [:]
+                for r in userRecipes { if let id = r.id { map[id] = r } }
+                recipeById = map
             }
         }
         .sheet(isPresented: $showShoppingList) {
             if let plan {
-                ShoppingListSheet(items: plan.shoppingList)
+                ShoppingListSheet(items: plan.shoppingList.map { ShoppingListItem.parse($0) })
             }
         }
         .sheet(item: $swappingMeal) { meal in
+            let mealName = meal.displayName(using: recipeById)
             RecipeSwapSheet(
-                currentMealName: meal.name,
+                currentMealName: mealName,
                 recipes: userRecipes,
                 onSelect: { selected in
                     replaceMeal(meal, with: selected)
@@ -1129,7 +1134,7 @@ struct MealPlanResultView: View {
             )
         }
         .sheet(item: $editingMeal) { meal in
-            MealEditSheet(meal: meal, userRecipes: userRecipes) { updated in
+            MealEditSheet(meal: meal, userRecipes: userRecipes, recipeById: recipeById) { updated in
                 replaceMealById(meal, with: updated)
                 editingMeal = nil
             }
@@ -1140,10 +1145,7 @@ struct MealPlanResultView: View {
         guard var plan else { return }
         for dayIndex in plan.days.indices {
             if let mealIndex = plan.days[dayIndex].meals.firstIndex(where: { $0.id == meal.id }) {
-                plan.days[dayIndex].meals[mealIndex].name = recipe.title
-                plan.days[dayIndex].meals[mealIndex].description = String(recipe.description.prefix(120))
-                plan.days[dayIndex].meals[mealIndex].calories = recipe.calories_total_kcal.map { Int($0) }
-                plan.days[dayIndex].meals[mealIndex].ingredients = recipe.ingredients_without_measures
+                plan.days[dayIndex].meals[mealIndex].recipeIds = [recipe.id].compactMap { $0 }
                 break
             }
         }
@@ -1166,10 +1168,7 @@ struct MealPlanResultView: View {
         if let dayIndex = plan.days.firstIndex(where: { $0.id == dayId }) {
             let newMeal = MealPlanMeal(
                 mealType: "Ek Öğün",
-                name: recipe.title,
-                description: String(recipe.description.prefix(120)),
-                calories: recipe.calories_total_kcal.map { Int($0) },
-                ingredients: recipe.ingredients_without_measures
+                recipeIds: [recipe.id].compactMap { $0 }
             )
             plan.days[dayIndex].meals.append(newMeal)
             self.plan = plan
@@ -1191,31 +1190,28 @@ struct MealPlanResultView: View {
                     [
                         "day_name": day.name,
                         "meals": day.meals.map { meal in
-                            [
+                            var m: [String: Any] = [
                                 "meal_type": meal.mealType,
-                                "name": meal.name,
-                                "description": meal.description ?? "",
-                                "calories": meal.calories ?? 0,
-                                "ingredients": meal.ingredients
-                            ] as [String: Any]
+                                "recipe_ids": meal.recipeIds
+                            ]
+                            if let n = meal.fallbackName { m["name"] = n }
+                            if let d = meal.fallbackDescription { m["description"] = d }
+                            if let c = meal.fallbackCalories { m["calories"] = c }
+                            if let i = meal.fallbackIngredients { m["ingredients"] = i }
+                            return m as [String: Any]
                         }
                     ] as [String: Any]
                 },
-                "shopping_list": plan.shoppingList,
                 "avg_calories_per_day": plan.avgCaloriesPerDay ?? 0
             ]
-
-            // Match meal names to recipe IDs
-            let allMealNames = Set(plan.days.flatMap { $0.meals.map { $0.name.lowercased() } })
-            let matchedIds = userRecipes
-                .filter { allMealNames.contains($0.title.lowercased()) }
-                .compactMap { $0.id }
 
             let body: [String: Any] = [
                 "user_id": userId,
                 "name": "\(period.rawValue) - \(peopleCount.rawValue)",
                 "plan": planData,
-                "recipe_ids": matchedIds
+                "recipe_ids": plan.recipeIds,
+                "shopping_list": plan.shoppingList,
+                "shopping_ingredient_ids": plan.shoppingIngredientIds
             ]
 
             var request = URLRequest(url: url)
@@ -1287,6 +1283,7 @@ private struct SummaryPill: View {
 
 private struct DayCard: View {
     let day: MealPlanDay
+    let recipeById: [String: RecipeDTO]
     let isExpanded: Bool
     let onTap: () -> Void
     var onSwapMeal: ((MealPlanMeal) -> Void)?
@@ -1318,6 +1315,9 @@ private struct DayCard: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(day.meals) { meal in
+                        let mealName = meal.displayName(using: recipeById)
+                        let totalCal = meal.displayCalories(using: recipeById)
+
                         Button {
                             onEditMeal?(meal)
                         } label: {
@@ -1332,19 +1332,19 @@ private struct DayCard: View {
                                             .background(DS.emberLight)
                                             .clipShape(Capsule())
 
-                                        if let cal = meal.calories {
+                                        if let cal = totalCal, cal > 0 {
                                             Text("\(cal) kcal")
                                                 .font(.captionText())
                                                 .foregroundStyle(DS.smoke)
                                         }
                                     }
 
-                                    Text(meal.name)
+                                    Text(mealName)
                                         .font(.bodyText())
                                         .foregroundStyle(DS.ink)
 
-                                    if let desc = meal.description {
-                                        Text(desc)
+                                    if let desc = meal.displayDescription(using: recipeById), !desc.isEmpty {
+                                        Text(String(desc.prefix(120)))
                                             .font(.captionText())
                                             .foregroundStyle(DS.smoke)
                                             .lineLimit(2)
@@ -1399,6 +1399,8 @@ private struct DayCard: View {
 struct MealPlan {
     var days: [MealPlanDay]
     let shoppingList: [String]
+    let shoppingIngredientIds: [String]
+    let recipeIds: [String]
     let avgCaloriesPerDay: Int?
 
     var totalRecipes: Int {
@@ -1415,17 +1417,74 @@ struct MealPlanDay: Identifiable {
 struct MealPlanMeal: Identifiable {
     let id = UUID()
     var mealType: String
-    var name: String
-    var description: String?
-    var calories: Int?
-    var ingredients: [String]
+    var recipeIds: [String]
+    // Fallback fields when recipes aren't in user's collection
+    var fallbackName: String?
+    var fallbackDescription: String?
+    var fallbackCalories: Int?
+    var fallbackIngredients: [String]?
+
+    /// Display name: resolved from recipes if available, otherwise fallback
+    func displayName(using recipeById: [String: RecipeDTO]) -> String {
+        let resolved = recipeIds.compactMap { recipeById[$0]?.title }
+        if !resolved.isEmpty { return resolved.joined(separator: " + ") }
+        return fallbackName ?? "Tarif bulunamadı"
+    }
+
+    func displayCalories(using recipeById: [String: RecipeDTO]) -> Int? {
+        let resolved = recipeIds.compactMap { recipeById[$0]?.calories_total_kcal }
+        if !resolved.isEmpty { return Int(resolved.reduce(0, +)) }
+        return fallbackCalories
+    }
+
+    func displayDescription(using recipeById: [String: RecipeDTO]) -> String? {
+        if let first = recipeIds.first, let r = recipeById[first] { return String(r.description.prefix(120)) }
+        return fallbackDescription
+    }
+}
+
+// MARK: - Shopping List Item
+
+struct ShoppingListItem: Hashable {
+    let name: String
+    let amount: String
+
+    /// Parse an AI shopping list string like "2 kg tavuk göğsü" into name + amount.
+    static func parse(_ raw: String) -> ShoppingListItem {
+        let pattern = #"^([\d½¼¾⅓⅔.,/]+\s*(?:kg|g|gr|ml|lt?|litre|adet|tane|paket|demet|diş|tutam|dal|yaprak|kaşığı?|kasigi?|bardağı?|bardagi?|kutu|kavanoz|şişe|sise|dilim|porsiyon|avuç?|avuc?|kase|tabak|somun|baş)\s*(?:\([^)]*\))?)\s+(.+)"#
+        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+           let match = regex.firstMatch(in: raw, range: NSRange(location: 0, length: (raw as NSString).length)),
+           let amountRange = Range(match.range(at: 1), in: raw),
+           let nameRange = Range(match.range(at: 2), in: raw) {
+            return ShoppingListItem(
+                name: String(raw[nameRange]).trimmingCharacters(in: .whitespaces),
+                amount: String(raw[amountRange]).trimmingCharacters(in: .whitespaces)
+            )
+        }
+        // Try simple number prefix: "6 yumurta"
+        let simplePattern = #"^([\d½¼¾⅓⅔.,/]+)\s+(.+)"#
+        if let regex = try? NSRegularExpression(pattern: simplePattern),
+           let match = regex.firstMatch(in: raw, range: NSRange(location: 0, length: (raw as NSString).length)),
+           let numRange = Range(match.range(at: 1), in: raw),
+           let nameRange = Range(match.range(at: 2), in: raw) {
+            return ShoppingListItem(
+                name: String(raw[nameRange]).trimmingCharacters(in: .whitespaces),
+                amount: String(raw[numRange]).trimmingCharacters(in: .whitespaces)
+            )
+        }
+        // No amount (e.g. "Tuz", "Karabiber")
+        return ShoppingListItem(name: raw, amount: "")
+    }
 }
 
 // MARK: - Shopping List Sheet
 
 struct ShoppingListSheet: View {
-    let items: [String]
+    let items: [ShoppingListItem]
     @Environment(\.dismiss) private var dismiss
+    @State private var pantryNames: Set<String> = []
+    @State private var shoppingListNames: Set<String> = []
+    @State private var isLoaded = false
 
     var body: some View {
         NavigationStack {
@@ -1443,8 +1502,76 @@ struct ShoppingListSheet: View {
                         }
                         .padding(.horizontal, 20)
 
-                        IngredientsView(items: items)
+                        if isLoaded {
+                            HStack(spacing: 16) {
+                                HStack(spacing: 5) {
+                                    Circle().fill(DS.ember).frame(width: 8, height: 8)
+                                    Text("Kilerde var").font(.captionText()).foregroundStyle(DS.smoke)
+                                }
+                                HStack(spacing: 5) {
+                                    Circle().fill(DS.tomato).frame(width: 8, height: 8)
+                                    Text("Alınacak").font(.captionText()).foregroundStyle(DS.smoke)
+                                }
+                                Spacer()
+                            }
                             .padding(.horizontal, 20)
+                        }
+
+                        VStack(spacing: 0) {
+                            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                                let inPantry = pantryNames.contains(item.name.lowercased())
+                                let inCart = shoppingListNames.contains(item.name.lowercased())
+
+                                HStack(spacing: 10) {
+                                    if isLoaded {
+                                        Circle()
+                                            .fill(inPantry ? DS.ember : DS.tomato)
+                                            .frame(width: 9, height: 9)
+                                    }
+
+                                    Text(item.name)
+                                        .font(.system(size: 15))
+                                        .foregroundStyle(inPantry ? DS.smoke : DS.ink)
+
+                                    Spacer()
+
+                                    if !item.amount.isEmpty {
+                                        Text(item.amount)
+                                            .font(.system(size: 14))
+                                            .foregroundStyle(DS.smoke)
+                                    }
+
+                                    if isLoaded && !inPantry {
+                                        if inCart {
+                                            Image(systemName: "cart.fill.badge.checkmark")
+                                                .font(.system(size: 14))
+                                                .foregroundStyle(DS.ember)
+                                        } else {
+                                            Button {
+                                                addToShoppingList(item.name)
+                                            } label: {
+                                                Image(systemName: "cart.badge.plus")
+                                                    .font(.system(size: 14))
+                                                    .foregroundStyle(DS.ember)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .frame(minHeight: 46)
+
+                                if index < items.count - 1 {
+                                    Divider()
+                                        .background(DS.stone)
+                                        .padding(.leading, isLoaded ? 35 : 16)
+                                }
+                            }
+                        }
+                        .background(DS.flour)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .shadow(color: DS.shadowCard, radius: 4, y: 2)
+                        .padding(.horizontal, 20)
                     }
                     .padding(.top, 8)
                     .padding(.bottom, 40)
@@ -1457,6 +1584,26 @@ struct ShoppingListSheet: View {
                     Button("Kapat") { dismiss() }
                         .foregroundStyle(DS.ember)
                 }
+            }
+            .task {
+                guard let userId = Clerk.shared.user?.id else { return }
+                async let pantryTask = APIService.fetchPantry(userId: userId)
+                async let shoppingTask = APIService.fetchShoppingList(userId: userId)
+                let pantryItems = await pantryTask
+                let shoppingItems = await shoppingTask
+                pantryNames = Set(pantryItems.map { $0.ingredient_name.lowercased() })
+                shoppingListNames = Set(shoppingItems.map { $0.ingredient_name.lowercased() })
+                isLoaded = true
+            }
+        }
+    }
+
+    private func addToShoppingList(_ name: String) {
+        Task {
+            guard let userId = Clerk.shared.user?.id else { return }
+            let success = await APIService.addToShoppingList(userId: userId, ingredientNames: [name])
+            if success {
+                shoppingListNames.insert(name.lowercased())
             }
         }
     }

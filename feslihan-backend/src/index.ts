@@ -1388,7 +1388,7 @@ app.put("/users/:userId/recipes/:recipeId/favorite", async (req, res) => {
 
 // Save a meal plan
 app.post("/meal-plans", async (req, res) => {
-  const { user_id, name, plan, recipe_ids } = req.body;
+  const { user_id, name, plan, recipe_ids, shopping_list, shopping_ingredient_ids } = req.body;
   if (!user_id || !plan) {
     res.status(400).json({ error: "user_id and plan required" });
     return;
@@ -1396,7 +1396,14 @@ app.post("/meal-plans", async (req, res) => {
 
   const result = await db
     .insert(mealPlans)
-    .values({ userId: user_id, name: name || "Yemek Planı", plan, recipeIds: recipe_ids ?? [] })
+    .values({
+      userId: user_id,
+      name: name || "Yemek Planı",
+      plan,
+      recipeIds: recipe_ids ?? [],
+      shoppingList: shopping_list ?? [],
+      shoppingIngredientIds: shopping_ingredient_ids ?? [],
+    })
     .returning();
 
   res.status(201).json(toSnake(result[0]));
@@ -1416,11 +1423,13 @@ app.get("/users/:userId/meal-plans", async (req, res) => {
 // Update a meal plan
 app.put("/meal-plans/:id", async (req, res) => {
   try {
-    const { name, plan, recipe_ids } = req.body;
+    const { name, plan, recipe_ids, shopping_list, shopping_ingredient_ids } = req.body;
     const updates: Record<string, any> = {};
     if (name !== undefined) updates.name = name;
     if (plan !== undefined) updates.plan = plan;
     if (recipe_ids !== undefined) updates.recipeIds = recipe_ids;
+    if (shopping_list !== undefined) updates.shoppingList = shopping_list;
+    if (shopping_ingredient_ids !== undefined) updates.shoppingIngredientIds = shopping_ingredient_ids;
 
     if (Object.keys(updates).length === 0) {
       res.status(400).json({ error: "No fields to update" });
@@ -1879,6 +1888,8 @@ app.post("/ai/meal-plan", async (req, res) => {
   try {
     // Fetch user's recipes if user_id provided
     let availableRecipes: any[] = [];
+    // Build title→id map for resolving recipe names to IDs
+    const titleToId: Record<string, string> = {};
     if (req.body.user_id) {
       const mappings = await db
         .select({ recipeId: userRecipes.recipeId })
@@ -1893,6 +1904,9 @@ app.post("/ai/meal-plan", async (req, res) => {
           .where(inArray(recipes.id, recipeIds));
 
         const resolvedRecipes = await enrichRecipes(userRecipeRows);
+        for (const r of resolvedRecipes) {
+          titleToId[(r as any).title] = (r as any).id;
+        }
         availableRecipes = resolvedRecipes.map((r: any) => ({
           title: r.title,
           tags: r.tags as string[],
@@ -1909,25 +1923,54 @@ app.post("/ai/meal-plan", async (req, res) => {
       available_recipes: availableRecipes,
     });
 
-    // Normalize ingredient casing: capitalize first letter
-    if (result.days) {
-      for (const day of result.days) {
-        for (const meal of day.meals ?? []) {
-          if (meal.ingredients) {
-            meal.ingredients = meal.ingredients.map((ing: string) =>
-              ing.charAt(0).toUpperCase() + ing.slice(1)
-            );
-          }
-        }
-      }
-      if (result.shopping_list) {
-        result.shopping_list = result.shopping_list.map((item: string) =>
-          item.charAt(0).toUpperCase() + item.slice(1)
-        );
-      }
-    }
+    // Normalize shopping list casing
+    const shoppingList: string[] = (result.shopping_list ?? []).map((item: string) =>
+      item.charAt(0).toUpperCase() + item.slice(1)
+    );
 
-    res.json(result);
+    // Parse shopping list items into names (for ingredient ID resolution)
+    const shoppingIngredientNames = shoppingList.map((item: string) => {
+      const parsed = parseIngredientLine(item);
+      return parsed.name;
+    }).filter(Boolean);
+
+    // Resolve ingredient names to IDs in the ingredients table
+    const shoppingIngredientIds = await resolveIngredientIds(shoppingIngredientNames);
+
+    // Resolve recipe names to IDs, keep full data as fallback
+    const allRecipeIds: string[] = [];
+    const enrichedDays = (result.days ?? []).map((day: any) => ({
+      day_name: day.day_name,
+      meals: (day.meals ?? []).map((meal: any) => {
+        const parts = (meal.name as string).split("+").map((s: string) => s.trim());
+        const ids = parts
+          .map((title: string) => titleToId[title])
+          .filter(Boolean) as string[];
+        for (const id of ids) {
+          if (!allRecipeIds.includes(id)) allRecipeIds.push(id);
+        }
+        // Normalize ingredient casing
+        const ingredients = (meal.ingredients ?? []).map((ing: string) =>
+          ing.charAt(0).toUpperCase() + ing.slice(1)
+        );
+        return {
+          meal_type: meal.meal_type,
+          recipe_ids: ids,
+          name: meal.name,
+          description: meal.description,
+          calories: meal.calories,
+          ingredients,
+        };
+      }),
+    }));
+
+    res.json({
+      days: enrichedDays,
+      shopping_list: shoppingList,
+      shopping_ingredient_ids: shoppingIngredientIds,
+      avg_calories_per_day: result.avg_calories_per_day ?? null,
+      recipe_ids: allRecipeIds,
+    });
   } catch (err: any) {
     console.error("[AI MealPlan]", err.message || err);
     res.status(500).json({ error: "Meal plan generation failed" });

@@ -6,6 +6,7 @@ import ClerkKit
 struct IngredientsView: View {
     let ingredients: [Ingredient]
     @State private var pantryNames: Set<String> = []
+    @State private var shoppingListNames: Set<String> = []
     @State private var isLoaded = false
 
     init(ingredients: [Ingredient]) {
@@ -38,6 +39,7 @@ struct IngredientsView: View {
             ForEach(Array(ingredients.enumerated()), id: \.element.id) { index, ingredient in
                 let key = (ingredient.baseName ?? ingredient.name).lowercased()
                 let inPantry = pantryNames.contains(key)
+                let inCart = shoppingListNames.contains(key)
 
                 HStack(spacing: 10) {
                     // Pantry status dot
@@ -60,16 +62,22 @@ struct IngredientsView: View {
 
                     Spacer()
 
-                    // Add to shopping list (only if not in pantry)
+                    // Shopping list status
                     if isLoaded && !inPantry {
-                        Button {
-                            Task { await addToShoppingList(ingredient.baseName ?? ingredient.name) }
-                        } label: {
-                            Image(systemName: "cart.badge.plus")
+                        if inCart {
+                            Image(systemName: "cart.fill.badge.checkmark")
                                 .font(.system(size: 15))
                                 .foregroundStyle(DS.ember)
+                        } else {
+                            Button {
+                                Task { await addToShoppingList(ingredient.baseName ?? ingredient.name) }
+                            } label: {
+                                Image(systemName: "cart.badge.plus")
+                                    .font(.system(size: 15))
+                                    .foregroundStyle(DS.ember)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.vertical, 10)
@@ -87,13 +95,20 @@ struct IngredientsView: View {
 
     private func loadPantry() async {
         guard let userId = Clerk.shared.user?.id else { return }
-        let items = await APIService.fetchPantry(userId: userId)
-        pantryNames = Set(items.map { $0.ingredient_name.lowercased() })
+        async let pantryTask = APIService.fetchPantry(userId: userId)
+        async let shoppingTask = APIService.fetchShoppingList(userId: userId)
+        let pantryItems = await pantryTask
+        let shoppingItems = await shoppingTask
+        pantryNames = Set(pantryItems.map { $0.ingredient_name.lowercased() })
+        shoppingListNames = Set(shoppingItems.map { $0.ingredient_name.lowercased() })
         isLoaded = true
     }
 
     private func addToShoppingList(_ name: String) async {
         guard let userId = Clerk.shared.user?.id else { return }
-        _ = await APIService.addToShoppingList(userId: userId, ingredientNames: [name])
+        let success = await APIService.addToShoppingList(userId: userId, ingredientNames: [name])
+        if success {
+            shoppingListNames.insert(name.lowercased())
+        }
     }
 }

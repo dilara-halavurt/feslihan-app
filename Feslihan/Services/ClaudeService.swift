@@ -157,10 +157,11 @@ enum ClaudeService {
                 meals: day.meals.map { meal in
                     MealPlanMeal(
                         mealType: meal.mealType,
-                        name: meal.name,
-                        description: meal.description,
-                        calories: meal.calories,
-                        ingredients: meal.ingredients
+                        recipeIds: meal.recipeIds ?? [],
+                        fallbackName: meal.name,
+                        fallbackDescription: meal.description,
+                        fallbackCalories: meal.calories,
+                        fallbackIngredients: meal.ingredients
                     )
                 }
             )
@@ -168,7 +169,9 @@ enum ClaudeService {
 
         return MealPlan(
             days: days,
-            shoppingList: planJSON.shoppingList,
+            shoppingList: planJSON.shoppingList ?? [],
+            shoppingIngredientIds: planJSON.shoppingIngredientIds ?? [],
+            recipeIds: planJSON.recipeIds ?? [],
             avgCaloriesPerDay: planJSON.avgCaloriesPerDay
         )
     }
@@ -178,12 +181,16 @@ enum ClaudeService {
 
 private struct MealPlanJSON: Decodable {
     let days: [MealPlanDayJSON]
-    let shoppingList: [String]
+    let shoppingList: [String]?
+    let shoppingIngredientIds: [String]?
+    let recipeIds: [String]?
     let avgCaloriesPerDay: Int?
 
     enum CodingKeys: String, CodingKey {
         case days
         case shoppingList = "shopping_list"
+        case shoppingIngredientIds = "shopping_ingredient_ids"
+        case recipeIds = "recipe_ids"
         case avgCaloriesPerDay = "avg_calories_per_day"
     }
 }
@@ -200,13 +207,16 @@ private struct MealPlanDayJSON: Decodable {
 
 private struct MealPlanMealJSON: Decodable {
     let mealType: String
-    let name: String
+    let recipeIds: [String]?
+    // Fallback fields from AI when recipes aren't in user's collection
+    let name: String?
     let description: String?
     let calories: Int?
-    let ingredients: [String]
+    let ingredients: [String]?
 
     enum CodingKeys: String, CodingKey {
         case mealType = "meal_type"
+        case recipeIds = "recipe_ids"
         case name, description, calories, ingredients
     }
 }

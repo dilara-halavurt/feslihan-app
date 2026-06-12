@@ -194,6 +194,8 @@ export const mealPlans = pgTable("meal_plans", {
   name: varchar("name", { length: 255 }).notNull(),
   plan: jsonb("plan").notNull(),
   recipeIds: jsonb("recipe_ids").notNull().default([]),
+  shoppingList: jsonb("shopping_list").notNull().default([]),
+  shoppingIngredientIds: jsonb("shopping_ingredient_ids").notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

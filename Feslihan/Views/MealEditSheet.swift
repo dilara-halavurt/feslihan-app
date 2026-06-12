@@ -3,12 +3,12 @@ import SwiftUI
 struct MealEditSheet: View {
     let meal: MealPlanMeal
     let userRecipes: [RecipeDTO]
+    let recipeById: [String: RecipeDTO]
     let onSave: (MealPlanMeal) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var mainRecipeName: String
-    @State private var sideRecipes: [String]
-    @State private var notes: String
+    @State private var mainRecipeId: String?
+    @State private var sideRecipeIds: [String]
     @State private var mealType: String
     @State private var showRecipePicker = false
     @State private var pickingFor: PickTarget = .main
@@ -26,15 +26,15 @@ struct MealEditSheet: View {
         ("fork.knife", "Atıştırmalık"),
     ]
 
-    private var isNewMeal: Bool { meal.name.isEmpty }
+    private var isNewMeal: Bool { meal.recipeIds.isEmpty }
 
-    init(meal: MealPlanMeal, userRecipes: [RecipeDTO], onSave: @escaping (MealPlanMeal) -> Void) {
+    init(meal: MealPlanMeal, userRecipes: [RecipeDTO], recipeById: [String: RecipeDTO] = [:], onSave: @escaping (MealPlanMeal) -> Void) {
         self.meal = meal
         self.userRecipes = userRecipes
+        self.recipeById = recipeById
         self.onSave = onSave
-        _mainRecipeName = State(initialValue: meal.name)
-        _sideRecipes = State(initialValue: [])
-        _notes = State(initialValue: "")
+        _mainRecipeId = State(initialValue: meal.recipeIds.first)
+        _sideRecipeIds = State(initialValue: Array(meal.recipeIds.dropFirst()))
         _mealType = State(initialValue: meal.mealType)
     }
 
@@ -51,7 +51,8 @@ struct MealEditSheet: View {
                                 .font(.system(size: 22, weight: .bold, design: .rounded))
                                 .foregroundStyle(DS.ink)
                             if !isNewMeal {
-                                Text(meal.name)
+                                let currentName = meal.recipeIds.compactMap { recipeById[$0]?.title }.joined(separator: " + ")
+                                Text(currentName)
                                     .font(.system(size: 14))
                                     .foregroundStyle(DS.smoke)
                             }
@@ -68,14 +69,14 @@ struct MealEditSheet: View {
                                 showRecipePicker = true
                             } label: {
                                 HStack {
-                                    if mainRecipeName.isEmpty {
+                                    if let id = mainRecipeId, let recipe = recipeById[id] {
+                                        Text(recipe.title)
+                                            .font(.system(size: 15))
+                                            .foregroundStyle(DS.ink)
+                                    } else {
                                         Text("Tarif seç…")
                                             .font(.system(size: 15))
                                             .foregroundStyle(DS.dust)
-                                    } else {
-                                        Text(mainRecipeName)
-                                            .font(.system(size: 15))
-                                            .foregroundStyle(DS.ink)
                                     }
                                     Spacer()
                                     Image(systemName: "chevron.right")
@@ -105,20 +106,20 @@ struct MealEditSheet: View {
                                 }
                             }
 
-                            if sideRecipes.isEmpty {
+                            if sideRecipeIds.isEmpty {
                                 Text("Henüz ek tarif eklenmedi")
                                     .font(.system(size: 13))
                                     .foregroundStyle(DS.dust)
                                     .padding(.vertical, 8)
                             } else {
-                                ForEach(Array(sideRecipes.enumerated()), id: \.offset) { index, name in
+                                ForEach(Array(sideRecipeIds.enumerated()), id: \.offset) { index, id in
                                     HStack {
-                                        Text(name)
+                                        Text(recipeById[id]?.title ?? id)
                                             .font(.system(size: 15))
                                             .foregroundStyle(DS.ink)
                                         Spacer()
                                         Button {
-                                            sideRecipes.remove(at: index)
+                                            sideRecipeIds.remove(at: index)
                                         } label: {
                                             Image(systemName: "xmark.circle.fill")
                                                 .font(.system(size: 16))
@@ -130,20 +131,6 @@ struct MealEditSheet: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                                 }
                             }
-                        }
-
-                        // Notes
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Notlar / Ek Malzemeler")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(DS.ink)
-
-                            TextField("Örn: Ekmek al, zeytinyağı ekstra sızma olacak...", text: $notes, axis: .vertical)
-                                .font(.system(size: 14))
-                                .lineLimit(3...6)
-                                .padding(14)
-                                .background(DS.sand)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
 
                         // Meal type
@@ -193,15 +180,16 @@ struct MealEditSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showRecipePicker) {
                 RecipePickerSheet(recipes: userRecipes) { selected in
+                    guard let id = selected.id else { return }
                     switch pickingFor {
                     case .main:
-                        mainRecipeName = selected.title
+                        mainRecipeId = id
                     case .side(let idx):
-                        if idx < sideRecipes.count {
-                            sideRecipes[idx] = selected.title
+                        if idx < sideRecipeIds.count {
+                            sideRecipeIds[idx] = id
                         }
                     case .newSide:
-                        sideRecipes.append(selected.title)
+                        sideRecipeIds.append(id)
                     }
                     showRecipePicker = false
                 }
@@ -212,40 +200,14 @@ struct MealEditSheet: View {
     }
 
     private var canSave: Bool {
-        !mainRecipeName.trimmingCharacters(in: .whitespaces).isEmpty
+        mainRecipeId != nil
     }
 
     private func save() {
-        guard canSave else { return }
+        guard canSave, let mainId = mainRecipeId else { return }
         var updated = meal
-        // Compose name: main + sides
-        if sideRecipes.isEmpty {
-            updated.name = mainRecipeName
-        } else {
-            updated.name = mainRecipeName + " + " + sideRecipes.joined(separator: " + ")
-        }
+        updated.recipeIds = [mainId] + sideRecipeIds
         updated.mealType = mealType
-        if !notes.isEmpty {
-            let existing = updated.description ?? ""
-            updated.description = existing.isEmpty ? notes : "\(existing)\n\(notes)"
-        }
-        // Merge calories from main + sides
-        var totalCalories = meal.calories ?? 0
-        if let mainRecipe = userRecipes.first(where: { $0.title == mainRecipeName }) {
-            if isNewMeal {
-                totalCalories = mainRecipe.calories_total_kcal.map { Int($0) } ?? 0
-                updated.ingredients = mainRecipe.ingredients_without_measures
-            }
-        }
-        for sideName in sideRecipes {
-            if let recipe = userRecipes.first(where: { $0.title == sideName }) {
-                totalCalories += recipe.calories_total_kcal.map { Int($0) } ?? 0
-                updated.ingredients += recipe.ingredients_without_measures
-            }
-        }
-        if totalCalories > 0 {
-            updated.calories = totalCalories
-        }
         onSave(updated)
         dismiss()
     }
