@@ -587,6 +587,7 @@ app.get("/users/:userId/recipes", async (req, res) => {
     .select({
       recipeId: userRecipes.recipeId,
       folderId: userRecipes.folderId,
+      isFavorite: userRecipes.isFavorite,
     })
     .from(userRecipes)
     .where(eq(userRecipes.userId, req.params.userId));
@@ -603,11 +604,13 @@ app.get("/users/:userId/recipes", async (req, res) => {
     .where(inArray(recipes.id, recipeIds))
     .orderBy(desc(recipes.createdAt));
 
-  // Attach folder_id to each recipe
+  // Attach folder_id and is_favorite to each recipe
   const folderMap = new Map(mappings.map((m) => [m.recipeId, m.folderId]));
+  const favoriteMap = new Map(mappings.map((m) => [m.recipeId, m.isFavorite]));
   const enriched = result.map((r) => ({
     ...r,
     folderId: folderMap.get(r.id) ?? null,
+    isFavorite: favoriteMap.get(r.id) ?? false,
   }));
 
   res.json(await enrichRecipes(enriched));
@@ -1358,6 +1361,29 @@ app.put("/users/:userId/recipes/:recipeId/folder", async (req, res) => {
   }
 
   res.json({ ok: true });
+});
+
+// Toggle favorite
+app.put("/users/:userId/recipes/:recipeId/favorite", async (req, res) => {
+  const { is_favorite } = req.body;
+
+  const result = await db
+    .update(userRecipes)
+    .set({ isFavorite: is_favorite ?? false })
+    .where(
+      and(
+        eq(userRecipes.userId, req.params.userId),
+        eq(userRecipes.recipeId, req.params.recipeId)
+      )
+    )
+    .returning();
+
+  if (result.length === 0) {
+    res.status(404).json({ error: "User recipe not found" });
+    return;
+  }
+
+  res.json({ ok: true, is_favorite: result[0].isFavorite });
 });
 
 // Save a meal plan

@@ -253,6 +253,25 @@ struct RecipeDetailView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 BackButton(action: { dismiss() })
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    recipe.isFavorite.toggle()
+                    Task {
+                        if let rid = backendRecipeId,
+                           let uid = Clerk.shared.user?.id {
+                            _ = await APIService.toggleFavorite(userId: uid, recipeId: rid, isFavorite: recipe.isFavorite)
+                        }
+                    }
+                } label: {
+                    Image(systemName: recipe.isFavorite ? "heart.fill" : "heart")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(recipe.isFavorite ? DS.tomato : DS.ink)
+                        .frame(width: 38, height: 38)
+                        .background(.white.opacity(0.85))
+                        .clipShape(Circle())
+                        .shadow(color: DS.shadowCard, radius: 4, y: 2)
+                }
+            }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
         .task {

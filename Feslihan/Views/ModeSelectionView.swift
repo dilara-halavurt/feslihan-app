@@ -280,8 +280,13 @@ struct ModeSelectionView: View {
             }
             .task {
                 await refreshPantryCount()
+                // Check local first, then backend
                 let descriptor = FetchDescriptor<Recipe>()
                 recipeCount = (try? modelContext.fetchCount(descriptor)) ?? 0
+                if recipeCount == 0, let userId = Clerk.shared.user?.id {
+                    let remote = await APIService.fetchUserRecipes(userId: userId)
+                    recipeCount = remote.count
+                }
             }
             .fullScreenCover(isPresented: $showPantryGate) {
                 PantryGateView(

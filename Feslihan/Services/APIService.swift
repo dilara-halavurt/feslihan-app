@@ -189,6 +189,18 @@ enum APIService {
         return true
     }
 
+    /// Toggle favorite status for a recipe.
+    static func toggleFavorite(userId: String, recipeId: String, isFavorite: Bool) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/users/\(userId)/recipes/\(recipeId)/favorite") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["is_favorite": isFavorite])
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200 else { return false }
+        return true
+    }
+
     /// Delete a recipe from the user's collection (keeps the global recipe).
     static func deleteUserRecipe(userId: String, recipeId: String) async -> Bool {
         guard let url = URL(string: "\(baseURL)/users/\(userId)/recipes/\(recipeId)") else { return false }
@@ -407,6 +419,7 @@ struct RecipeDTO: Codable {
     var requested_by: String
     var user_id: String?
     var folder_id: String?
+    var is_favorite: Bool?
 }
 
 extension RecipeDTO {

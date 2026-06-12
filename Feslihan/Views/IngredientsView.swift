@@ -1,11 +1,12 @@
 import SwiftUI
+import ClerkKit
 
 /// Reusable ingredient list component.
-/// Supports both structured `Ingredient` items (with amount) and plain string lists.
+/// Shows pantry status (green dot = have, red dot = need) and add-to-shopping-list button.
 struct IngredientsView: View {
     let ingredients: [Ingredient]
-    @State private var priceTiers: [String: String] = [:]
-    @State private var availabilityIcons: [String: String] = [:]
+    @State private var pantryNames: Set<String> = []
+    @State private var isLoaded = false
 
     init(ingredients: [Ingredient]) {
         self.ingredients = ingredients
@@ -18,73 +19,81 @@ struct IngredientsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Legend
+            if isLoaded {
+                HStack(spacing: 16) {
+                    HStack(spacing: 5) {
+                        Circle().fill(DS.ember).frame(width: 8, height: 8)
+                        Text("Var").font(.captionText()).foregroundStyle(DS.smoke)
+                    }
+                    HStack(spacing: 5) {
+                        Circle().fill(DS.tomato).frame(width: 8, height: 8)
+                        Text("Eksik").font(.captionText()).foregroundStyle(DS.smoke)
+                    }
+                    Spacer()
+                }
+                .padding(.bottom, 10)
+            }
+
             ForEach(Array(ingredients.enumerated()), id: \.element.id) { index, ingredient in
-                HStack(spacing: 12) {
-                    if !ingredient.amount.isEmpty {
-                        Text(ingredient.amount)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(DS.smoke)
-                            .frame(width: 80, alignment: .leading)
+                let key = (ingredient.baseName ?? ingredient.name).lowercased()
+                let inPantry = pantryNames.contains(key)
+
+                HStack(spacing: 10) {
+                    // Pantry status dot
+                    if isLoaded {
+                        Circle()
+                            .fill(inPantry ? DS.ember : DS.tomato)
+                            .frame(width: 9, height: 9)
                     }
 
-                    Text(ingredient.name)
-                        .font(.system(size: 15, weight: .regular))
-                        .foregroundStyle(DS.ink)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(ingredient.name)
+                            .font(.system(size: 15))
+                            .foregroundStyle(DS.ink)
+                        if !ingredient.amount.isEmpty {
+                            Text(ingredient.amount)
+                                .font(.system(size: 13))
+                                .foregroundStyle(DS.smoke)
+                        }
+                    }
 
                     Spacer()
 
-                    if let icon = availabilityIcons[(ingredient.baseName ?? ingredient.name).lowercased()] {
-                        Image(systemName: icon)
-                            .font(.system(size: 13))
-                            .foregroundStyle(availabilityColor(icon))
-                    }
-
-                    if let tier = priceTiers[(ingredient.baseName ?? ingredient.name).lowercased()] {
-                        Text(tier)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(priceTierColor(tier))
+                    // Add to shopping list (only if not in pantry)
+                    if isLoaded && !inPantry {
+                        Button {
+                            Task { await addToShoppingList(ingredient.baseName ?? ingredient.name) }
+                        } label: {
+                            Image(systemName: "cart.badge.plus")
+                                .font(.system(size: 15))
+                                .foregroundStyle(DS.ember)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.vertical, 10)
                 .padding(.horizontal, 4)
 
                 if index < ingredients.count - 1 {
-                    Divider()
+                    Divider().padding(.leading, isLoaded ? 23 : 0)
                 }
             }
         }
         .task {
-            let allIngredients = await APIService.fetchIngredients()
-            var tiers: [String: String] = [:]
-            var icons: [String: String] = [:]
-            for dto in allIngredients {
-                if let emoji = dto.priceTierEmoji {
-                    tiers[dto.name.lowercased()] = emoji
-                }
-                if let icon = dto.availabilityIcon {
-                    icons[dto.name.lowercased()] = icon
-                }
-            }
-            priceTiers = tiers
-            availabilityIcons = icons
+            await loadPantry()
         }
     }
 
-    private func priceTierColor(_ tier: String) -> Color {
-        switch tier {
-        case "₺": return Color(hex: 0x2D6A4F)
-        case "₺₺": return DS.smoke
-        case "₺₺₺": return Color(hex: 0xC0392B)
-        default: return DS.smoke
-        }
+    private func loadPantry() async {
+        guard let userId = Clerk.shared.user?.id else { return }
+        let items = await APIService.fetchPantry(userId: userId)
+        pantryNames = Set(items.map { $0.ingredient_name.lowercased() })
+        isLoaded = true
     }
 
-    private func availabilityColor(_ icon: String) -> Color {
-        switch icon {
-        case "checkmark.circle": return Color(hex: 0x2D6A4F)
-        case "minus.circle": return DS.smoke
-        case "exclamationmark.circle": return Color(hex: 0xE67E22)
-        default: return DS.smoke
-        }
+    private func addToShoppingList(_ name: String) async {
+        guard let userId = Clerk.shared.user?.id else { return }
+        _ = await APIService.addToShoppingList(userId: userId, ingredientNames: [name])
     }
 }

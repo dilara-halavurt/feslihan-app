@@ -180,6 +180,7 @@ export const userRecipes = pgTable("user_recipes", {
     .references(() => recipes.id),
   folderId: uuid("folder_id")
     .references(() => userFolders.id),
+  isFavorite: boolean("is_favorite").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

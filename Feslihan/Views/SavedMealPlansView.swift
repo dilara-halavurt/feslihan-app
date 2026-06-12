@@ -282,6 +282,7 @@ private struct SavedPlanDetailSheet: View {
     @State private var newMealForDay: MealPlanMeal?
     @State private var userRecipes: [RecipeDTO] = []
     @State private var ingredientData: [String: IngredientDTO] = [:]
+    @State private var pantryNames: Set<String> = []
     @State private var isSaving = false
     @State private var hasChanges = false
     @State private var selectedTab = 0
@@ -384,6 +385,8 @@ private struct SavedPlanDetailSheet: View {
 
                 if let userId = Clerk.shared.user?.id {
                     userRecipes = await APIService.fetchUserRecipes(userId: userId)
+                    let pantryItems = await APIService.fetchPantry(userId: userId)
+                    pantryNames = Set(pantryItems.map { $0.ingredient_name.lowercased() })
                 }
 
                 // Load ingredient data for unit conversions
@@ -710,6 +713,13 @@ private struct SavedPlanDetailSheet: View {
 
     // MARK: - Shopping List Tab
 
+    private func addToShoppingList(_ name: String) {
+        Task {
+            guard let userId = Clerk.shared.user?.id else { return }
+            _ = await APIService.addToShoppingList(userId: userId, ingredientNames: [name])
+        }
+    }
+
     private var shoppingListTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -725,20 +735,53 @@ private struct SavedPlanDetailSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 60)
                 } else {
+                    // Legend
+                    HStack(spacing: 16) {
+                        HStack(spacing: 5) {
+                            Circle().fill(DS.ember).frame(width: 8, height: 8)
+                            Text("Kilerde var").font(.captionText()).foregroundStyle(DS.smoke)
+                        }
+                        HStack(spacing: 5) {
+                            Circle().fill(DS.tomato).frame(width: 8, height: 8)
+                            Text("Alınacak").font(.captionText()).foregroundStyle(DS.smoke)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+
                     VStack(spacing: 0) {
                         ForEach(Array(currentShoppingList.enumerated()), id: \.offset) { index, item in
-                            HStack(spacing: 13) {
+                            let inPantry = pantryNames.contains(item.name.lowercased())
+
+                            HStack(spacing: 10) {
+                                // Pantry status dot
                                 Circle()
-                                    .stroke(DS.stone, lineWidth: 2)
-                                    .frame(width: 22, height: 22)
+                                    .fill(inPantry ? DS.ember : DS.tomato)
+                                    .frame(width: 9, height: 9)
+
                                 Text(item.name)
                                     .font(.system(size: 15))
-                                    .foregroundStyle(DS.ink)
+                                    .foregroundStyle(inPantry ? DS.smoke : DS.ink)
+
                                 Spacer()
+
                                 if !item.amount.isEmpty {
                                     Text(item.amount)
                                         .font(.system(size: 14))
                                         .foregroundStyle(DS.smoke)
+                                }
+
+                                if !inPantry {
+                                    Button {
+                                        addToShoppingList(item.name)
+                                    } label: {
+                                        Image(systemName: "cart.badge.plus")
+                                            .font(.system(size: 14))
+                                            .foregroundStyle(DS.ember)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -747,7 +790,7 @@ private struct SavedPlanDetailSheet: View {
                             if index < currentShoppingList.count - 1 {
                                 Divider()
                                     .background(DS.stone)
-                                    .padding(.leading, 51)
+                                    .padding(.leading, 35)
                             }
                         }
                     }
@@ -755,9 +798,9 @@ private struct SavedPlanDetailSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .shadow(color: DS.shadowCard, radius: 4, y: 2)
                     .padding(.horizontal, 20)
-                    .padding(.top, 12)
 
-                    Text("\(currentShoppingList.count) malzeme")
+                    let needCount = currentShoppingList.filter { !pantryNames.contains($0.name.lowercased()) }.count
+                    Text("\(currentShoppingList.count) malzeme · \(needCount) eksik")
                         .font(.captionText())
                         .foregroundStyle(DS.dust)
                         .frame(maxWidth: .infinity)

@@ -20,15 +20,22 @@ struct RecipeListView: View {
     @State private var ingredientPriceTiers: [String: String] = [:]
     @State private var triedRecipeIds: Set<String> = []
     @State private var showTriedOnly = false
+    @State private var showFavoritesOnly = false
     @AppStorage("recipeSortOption") private var sortOptionRaw = RecipeSortOption.newest.rawValue
 
     private var sortOption: RecipeSortOption {
         RecipeSortOption(rawValue: sortOptionRaw) ?? .newest
     }
 
+    private var favoriteRecipes: [Recipe] {
+        recipes.filter { $0.isFavorite }
+    }
+
     private var filtered: [Recipe] {
         var base: [Recipe]
-        if showTriedOnly {
+        if showFavoritesOnly {
+            base = favoriteRecipes
+        } else if showTriedOnly {
             base = recipes.filter { recipe in
                 guard let url = recipe.sourceURL else { return false }
                 return triedRecipeIds.contains(url)
@@ -174,301 +181,42 @@ struct RecipeListView: View {
         }
     }
 
+    private var navigationTitle: String {
+        if showFavoritesOnly { return "Beğendiklerim" }
+        if showTriedOnly { return "Denediklerim" }
+        if let folder = selectedFolder { return folder.name }
+        return "Tariflerim"
+    }
+
+    private var showsBackButton: Bool {
+        showFavoritesOnly || showTriedOnly || selectedFolder != nil || onBack != nil
+    }
+
+    private func handleBack() {
+        if showFavoritesOnly { showFavoritesOnly = false }
+        else if showTriedOnly { showTriedOnly = false }
+        else if selectedFolder != nil { selectedFolder = nil }
+        else { onBack?() }
+    }
+
     var body: some View {
         NavigationStack {
-            ZStack {
-                DS.cream.ignoresSafeArea()
-
-                if recipes.isEmpty {
-                    VStack(spacing: 16) {
-                        ZStack {
-                            Circle()
-                                .fill(DS.sand)
-                                .frame(width: 96, height: 96)
-                            Image(systemName: "fork.knife")
-                                .font(.system(size: 44, weight: .medium))
-                                .foregroundStyle(DS.dust)
-                        }
-
-                        Text("Henüz tarif eklemediniz…")
-                            .font(.system(size: 19, weight: .regular, design: .serif))
-                            .italic()
-                            .foregroundStyle(DS.ink)
-
-                        Text("Bir video linki yapıştır, gerisini Feslihan halletsin.")
-                            .font(.bodyText())
-                            .foregroundStyle(DS.smoke)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: 250)
-                    }
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 24) {
-                            // Search bar
-                            HStack(spacing: 10) {
-                                Image(systemName: "magnifyingglass")
-                                    .foregroundStyle(DS.dust)
-                                TextField("Tarif ara...", text: $searchText)
-                                    .font(.bodyText())
-                                if !searchText.isEmpty {
-                                    Button {
-                                        searchText = ""
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .foregroundStyle(DS.dust)
-                                    }
-                                }
-                            }
-                            .padding(12)
-                            .background(DS.sand)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .padding(.horizontal, 16)
-
-                            if filters.isActive {
-                                activeFiltersBar
-                            }
-
-                            if searchText.isEmpty && selectedFolder == nil && !showTriedOnly {
-                                // Denediklerim chip
-                                Button {
-                                    showTriedOnly = true
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "checkmark.seal.fill")
-                                            .font(.system(size: 15))
-                                        Text("Denediklerim")
-                                            .font(.system(size: 15, weight: .semibold))
-                                        Spacer()
-                                        if !triedRecipeIds.isEmpty {
-                                            Text("\(triedRecipeIds.count) tarif")
-                                                .font(.system(size: 13))
-                                                .foregroundStyle(DS.smoke)
-                                        }
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundStyle(DS.dust)
-                                    }
-                                    .foregroundStyle(DS.ember)
-                                    .padding(14)
-                                    .background(DS.emberLight)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.horizontal, 16)
-                                // Folders section
-                                if !folders.isEmpty {
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        Text("Klasörlerim")
-                                            .font(.displayTitle())
-                                            .foregroundStyle(DS.ink)
-                                            .padding(.horizontal, 16)
-
-                                        ScrollView(.horizontal, showsIndicators: false) {
-                                            HStack(spacing: 12) {
-                                                // Create folder button
-                                                Button {
-                                                    showCreateFolder = true
-                                                } label: {
-                                                    VStack(spacing: 8) {
-                                                        ZStack {
-                                                            RoundedRectangle(cornerRadius: 14)
-                                                                .strokeBorder(DS.dust.opacity(0.4), style: StrokeStyle(lineWidth: 1.5, dash: [6]))
-                                                                .frame(width: 100, height: 100)
-                                                            Image(systemName: "plus")
-                                                                .font(.system(size: 24, weight: .medium))
-                                                                .foregroundStyle(DS.dust)
-                                                        }
-                                                        Text("Yeni Klasör")
-                                                            .font(.system(size: 12, weight: .medium))
-                                                            .foregroundStyle(DS.smoke)
-                                                    }
-                                                }
-                                                .buttonStyle(.plain)
-
-                                                ForEach(folders) { folder in
-                                                    Button {
-                                                        selectedFolder = folder
-                                                    } label: {
-                                                        FolderCard(folder: folder, recipes: recipes)
-                                                    }
-                                                    .buttonStyle(.plain)
-                                                    .contextMenu {
-                                                        Button(role: .destructive) {
-                                                            Task { await deleteFolder(folder) }
-                                                        } label: {
-                                                            Label("Klasörü Sil", systemImage: "trash")
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            .padding(.horizontal, 16)
-                                        }
-                                    }
-                                } else {
-                                    // Show create folder prompt when no folders exist
-                                    Button {
-                                        showCreateFolder = true
-                                    } label: {
-                                        HStack(spacing: 10) {
-                                            Image(systemName: "folder.badge.plus")
-                                                .font(.system(size: 18, weight: .medium))
-                                            Text("Klasör Oluştur")
-                                                .font(.system(size: 15, weight: .medium))
-                                        }
-                                        .foregroundStyle(DS.ember)
-                                        .padding(.vertical, 12)
-                                        .padding(.horizontal, 20)
-                                        .background(DS.ember.opacity(0.1))
-                                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    }
-                                    .buttonStyle(.plain)
-                                    .padding(.horizontal, 16)
-                                }
-
-                                // All recipes grid
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("Tüm Tarifler")
-                                        .font(.displayTitle())
-                                        .foregroundStyle(DS.ink)
-                                        .padding(.horizontal, 16)
-
-                                    LazyVGrid(columns: columns, spacing: 12) {
-                                        ForEach(filtered) { recipe in
-                                            NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
-                                                RecipeCard(recipe: recipe)
-                                            }
-                                            .buttonStyle(.plain)
-                                            .contextMenu {
-                                                folderContextMenu(for: recipe)
-                                            }
-                                        }
-                                    }
-                                    .padding(.horizontal, 16)
-                                }
-                            } else if selectedFolder != nil {
-                                // Folder contents
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("\(filtered.count) tarif")
-                                        .font(.label())
-                                        .foregroundStyle(DS.smoke)
-                                        .padding(.horizontal, 16)
-
-                                    LazyVGrid(columns: columns, spacing: 12) {
-                                        ForEach(filtered) { recipe in
-                                            NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
-                                                RecipeCard(recipe: recipe)
-                                            }
-                                            .buttonStyle(.plain)
-                                            .contextMenu {
-                                                Button {
-                                                    Task { await moveRecipeToFolder(recipe, folder: nil) }
-                                                } label: {
-                                                    Label("Klasörden Çıkar", systemImage: "folder.badge.minus")
-                                                }
-                                                folderContextMenu(for: recipe)
-                                            }
-                                        }
-                                    }
-                                    .padding(.horizontal, 16)
-                                }
-                            } else {
-                                // Search results
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("\(filtered.count) sonuç")
-                                        .font(.label())
-                                        .foregroundStyle(DS.smoke)
-                                        .padding(.horizontal, 16)
-
-                                    LazyVGrid(columns: columns, spacing: 12) {
-                                        ForEach(filtered) { recipe in
-                                            NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
-                                                RecipeCard(recipe: recipe)
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-                                    }
-                                    .padding(.horizontal, 16)
-                                }
-                            }
-                        }
-                        .padding(.bottom, 80)
-                    }
-                }
-            }
+            mainContent
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if showTriedOnly {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        BackButton {
-                            showTriedOnly = false
-                        }
-                    }
-                } else if selectedFolder != nil {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        BackButton {
-                            selectedFolder = nil
-                        }
-                    }
-                } else if let onBack {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        BackButton(action: onBack)
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if showsBackButton {
+                        BackButton(action: handleBack)
                     }
                 }
                 ToolbarItem(placement: .principal) {
-                    if showTriedOnly {
-                        Text("Denediklerim")
-                            .font(.system(size: 30, weight: .semibold, design: .serif))
-                            .foregroundStyle(DS.ink)
-                    } else if let folder = selectedFolder {
-                        HStack(spacing: 6) {
-                            if let emoji = folder.emoji, !emoji.isEmpty {
-                                Text(emoji)
-                            }
-                            Text(folder.name)
-                                .font(.displayTitle())
-                                .foregroundStyle(DS.ink)
-                        }
-                    } else {
-                        Text("Tariflerim")
-                            .font(.system(size: 30, weight: .semibold, design: .serif))
-                            .foregroundStyle(DS.ink)
-                    }
+                    Text(navigationTitle)
+                        .font(.system(size: 30, weight: .semibold, design: .serif))
+                        .foregroundStyle(DS.ink)
                 }
-                if !recipes.isEmpty {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Menu {
-                            Picker("Sırala", selection: $sortOptionRaw) {
-                                ForEach(RecipeSortOption.allCases) { option in
-                                    Label(option.label, systemImage: option.icon)
-                                        .tag(option.rawValue)
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "arrow.up.arrow.down.circle")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundStyle(DS.ink)
-                        }
-                    }
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button {
-                            showFilterSheet = true
-                        } label: {
-                            ZStack(alignment: .topTrailing) {
-                                Image(systemName: filters.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                                    .font(.system(size: 18, weight: .medium))
-                                    .foregroundStyle(filters.isActive ? DS.ember : DS.ink)
-                                if filters.isActive {
-                                    Text("\(filters.activeCount)")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(.white)
-                                        .frame(minWidth: 14, minHeight: 14)
-                                        .padding(.horizontal, 3)
-                                        .background(DS.honey)
-                                        .clipShape(Capsule())
-                                        .offset(x: 6, y: -6)
-                                }
-                            }
-                        }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if !recipes.isEmpty {
+                        trailingToolbarButtons
                     }
                 }
             }
@@ -520,6 +268,316 @@ struct RecipeListView: View {
         }
     }
 
+    // MARK: - Extracted Sub-Views
+
+    private var trailingToolbarButtons: some View {
+        HStack(spacing: 12) {
+            Menu {
+                Picker("Sırala", selection: $sortOptionRaw) {
+                    ForEach(RecipeSortOption.allCases) { option in
+                        Label(option.label, systemImage: option.icon)
+                            .tag(option.rawValue)
+                    }
+                }
+            } label: {
+                Image(systemName: "arrow.up.arrow.down.circle")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(DS.ink)
+            }
+
+            Button {
+                showFilterSheet = true
+            } label: {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: filters.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(filters.isActive ? DS.ember : DS.ink)
+                    if filters.isActive {
+                        Text("\(filters.activeCount)")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(minWidth: 14, minHeight: 14)
+                            .padding(.horizontal, 3)
+                            .background(DS.honey)
+                            .clipShape(Capsule())
+                            .offset(x: 6, y: -6)
+                    }
+                }
+            }
+        }
+    }
+
+    private var mainContent: some View {
+        ZStack {
+            DS.cream.ignoresSafeArea()
+
+            if recipes.isEmpty {
+                emptyState
+            } else {
+                recipeScrollContent
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(DS.sand)
+                    .frame(width: 96, height: 96)
+                Image(systemName: "fork.knife")
+                    .font(.system(size: 44, weight: .medium))
+                    .foregroundStyle(DS.dust)
+            }
+            Text("Henüz tarif eklemediniz…")
+                .font(.system(size: 19, weight: .regular, design: .serif))
+                .italic()
+                .foregroundStyle(DS.ink)
+            Text("Bir video linki yapıştır, gerisini Feslihan halletsin.")
+                .font(.bodyText())
+                .foregroundStyle(DS.smoke)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 250)
+        }
+    }
+
+    private var recipeScrollContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                searchBar
+
+                if filters.isActive {
+                    activeFiltersBar
+                }
+
+                if searchText.isEmpty && selectedFolder == nil && !showTriedOnly && !showFavoritesOnly {
+                    collectionChips
+                    foldersSection
+                    allRecipesGrid
+                } else if selectedFolder != nil {
+                    folderContentsGrid
+                } else {
+                    filteredResultsGrid
+                }
+            }
+            .padding(.bottom, 80)
+        }
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(DS.dust)
+            TextField("Tarif ara...", text: $searchText)
+                .font(.bodyText())
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(DS.dust)
+                }
+            }
+        }
+        .padding(12)
+        .background(DS.sand)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 16)
+    }
+
+    private var collectionChips: some View {
+        VStack(spacing: 8) {
+            Button {
+                showTriedOnly = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 15))
+                    Text("Denediklerim")
+                        .font(.system(size: 15, weight: .semibold))
+                    Spacer()
+                    if !triedRecipeIds.isEmpty {
+                        Text("\(triedRecipeIds.count) tarif")
+                            .font(.system(size: 13))
+                            .foregroundStyle(DS.smoke)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(DS.dust)
+                }
+                .foregroundStyle(DS.ember)
+                .padding(14)
+                .background(DS.emberLight)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                showFavoritesOnly = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 15))
+                    Text("Beğendiklerim")
+                        .font(.system(size: 15, weight: .semibold))
+                    Spacer()
+                    if !favoriteRecipes.isEmpty {
+                        Text("\(favoriteRecipes.count) tarif")
+                            .font(.system(size: 13))
+                            .foregroundStyle(DS.smoke)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(DS.dust)
+                }
+                .foregroundStyle(DS.tomato)
+                .padding(14)
+                .background(DS.tomato.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    @ViewBuilder
+    private var foldersSection: some View {
+        if !folders.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Klasörlerim")
+                    .font(.displayTitle())
+                    .foregroundStyle(DS.ink)
+                    .padding(.horizontal, 16)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        Button {
+                            showCreateFolder = true
+                        } label: {
+                            VStack(spacing: 8) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .strokeBorder(DS.dust.opacity(0.4), style: StrokeStyle(lineWidth: 1.5, dash: [6]))
+                                        .frame(width: 100, height: 100)
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 24, weight: .medium))
+                                        .foregroundStyle(DS.dust)
+                                }
+                                Text("Yeni Klasör")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(DS.smoke)
+                            }
+                        }
+                        .buttonStyle(.plain)
+
+                        ForEach(folders) { folder in
+                            Button {
+                                selectedFolder = folder
+                            } label: {
+                                FolderCard(folder: folder, recipes: recipes)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    Task { await deleteFolder(folder) }
+                                } label: {
+                                    Label("Klasörü Sil", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+        } else {
+            Button {
+                showCreateFolder = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.system(size: 18, weight: .medium))
+                    Text("Klasör Oluştur")
+                        .font(.system(size: 15, weight: .medium))
+                }
+                .foregroundStyle(DS.ember)
+                .padding(.vertical, 12)
+                .padding(.horizontal, 20)
+                .background(DS.ember.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private var allRecipesGrid: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Tüm Tarifler")
+                .font(.displayTitle())
+                .foregroundStyle(DS.ink)
+                .padding(.horizontal, 16)
+
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(filtered) { recipe in
+                    NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
+                        RecipeCard(recipe: recipe)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        folderContextMenu(for: recipe)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private var folderContentsGrid: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\(filtered.count) tarif")
+                .font(.label())
+                .foregroundStyle(DS.smoke)
+                .padding(.horizontal, 16)
+
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(filtered) { recipe in
+                    NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
+                        RecipeCard(recipe: recipe)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button {
+                            Task { await moveRecipeToFolder(recipe, folder: nil) }
+                        } label: {
+                            Label("Klasörden Çıkar", systemImage: "folder.badge.minus")
+                        }
+                        folderContextMenu(for: recipe)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private var filteredResultsGrid: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\(filtered.count) sonuç")
+                .font(.label())
+                .foregroundStyle(DS.smoke)
+                .padding(.horizontal, 16)
+
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(filtered) { recipe in
+                    NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
+                        RecipeCard(recipe: recipe)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
     private func syncFromBackend() async {
         guard let userId = Clerk.shared.user?.id else {
             print("[Sync] No Clerk user ID — skipping sync")
@@ -563,6 +621,7 @@ struct RecipeListView: View {
                 existing.fatGrams = dto.fat_grams
                 existing.fiberGrams = dto.fiber_grams
                 existing.folderId = dto.folder_id
+                existing.isFavorite = dto.is_favorite ?? false
                 if existing.thumbnailData == nil, let url = fullThumbURL {
                     needsThumbnail.append((existing, url))
                 }
