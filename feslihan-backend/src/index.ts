@@ -1409,13 +1409,133 @@ app.post("/meal-plans", async (req, res) => {
   res.status(201).json(toSnake(result[0]));
 });
 
-// Get user's meal plans
+// Get user's meal plans (backfills old plans missing recipe_ids/shopping_list)
 app.get("/users/:userId/meal-plans", async (req, res) => {
   const result = await db
     .select()
     .from(mealPlans)
     .where(eq(mealPlans.userId, req.params.userId))
     .orderBy(desc(mealPlans.createdAt));
+
+  // Backfill old plans that have no shopping_list or recipe_ids
+  for (const plan of result) {
+    const planData = plan.plan as any;
+    const shoppingListCol = plan.shoppingList as string[];
+    const recipeIdsCol = plan.recipeIds as string[];
+    const needsBackfill =
+      (!shoppingListCol || shoppingListCol.length === 0) &&
+      planData?.days;
+
+    if (!needsBackfill) continue;
+
+    try {
+      // Ensure feslihan creator exists
+      await db
+        .insert(platformCreators)
+        .values({ username: "feslihan", platform: "other", displayName: "Feslihan AI" })
+        .onConflictDoNothing();
+
+      // Extract shopping_list from plan JSON (legacy) or build from ingredients
+      let backfilledShoppingList: string[] = planData.shopping_list ?? [];
+      const allIngredientNames: string[] = [];
+
+      // Build titleToId for existing user recipes
+      const mappings = await db
+        .select({ recipeId: userRecipes.recipeId })
+        .from(userRecipes)
+        .where(eq(userRecipes.userId, req.params.userId));
+      const existingRecipeRows = mappings.length > 0
+        ? await db.select().from(recipes).where(inArray(recipes.id, mappings.map(m => m.recipeId)))
+        : [];
+      const titleToId: Record<string, string> = {};
+      for (const r of existingRecipeRows) {
+        titleToId[r.title] = r.id;
+      }
+
+      // Create missing recipes and resolve IDs
+      for (const day of planData.days) {
+        for (const meal of day.meals ?? []) {
+          if (!meal.name) continue;
+          const parts = (meal.name as string).split("+").map((s: string) => s.trim());
+          for (const title of parts) {
+            if (titleToId[title]) continue;
+            const ingNames: string[] = (meal.ingredients ?? []).map(
+              (i: string) => i.charAt(0).toUpperCase() + i.slice(1)
+            );
+            const ingIds = await resolveIngredientIds(ingNames);
+            const url = `ai://meal-plan/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const [created] = await db
+              .insert(recipes)
+              .values({
+                platform: "other",
+                platformUser: "feslihan",
+                url,
+                title,
+                description: meal.description ?? "",
+                ingredientsWithMeasures: ingNames.map((n: string) => ({ name: n, amount: "" })),
+                ingredientsWithoutMeasures: ingIds,
+                caloriesTotalKcal: meal.calories ?? null,
+                cookingTimeMinutes: 30,
+                tags: [],
+                requestedBy: req.params.userId,
+              })
+              .returning();
+            titleToId[title] = created.id;
+            await db
+              .insert(userRecipes)
+              .values({ userId: req.params.userId, recipeId: created.id })
+              .onConflictDoNothing();
+          }
+          // Collect ingredient names for shopping list fallback
+          for (const ing of meal.ingredients ?? []) {
+            allIngredientNames.push(ing.charAt(0).toUpperCase() + ing.slice(1));
+          }
+        }
+      }
+
+      // Build shopping list from ingredients if legacy list is also empty
+      if (backfilledShoppingList.length === 0) {
+        const unique = [...new Set(allIngredientNames)];
+        backfilledShoppingList = unique;
+      }
+
+      const shoppingIngIds = await resolveIngredientIds(
+        backfilledShoppingList.map(item => parseIngredientLine(item).name).filter(Boolean)
+      );
+
+      // Rebuild plan with recipe_ids
+      const newDays = (planData.days ?? []).map((day: any) => ({
+        day_name: day.day_name,
+        meals: (day.meals ?? []).map((meal: any) => {
+          const parts = (meal.name as string).split("+").map((s: string) => s.trim());
+          const ids = parts.map((t: string) => titleToId[t]).filter(Boolean);
+          return { meal_type: meal.meal_type, recipe_ids: ids };
+        }),
+      }));
+
+      const allIds = Object.values(titleToId);
+      const newPlan = { days: newDays, avg_calories_per_day: planData.avg_calories_per_day };
+
+      // Update DB
+      await db
+        .update(mealPlans)
+        .set({
+          plan: newPlan,
+          recipeIds: allIds,
+          shoppingList: backfilledShoppingList,
+          shoppingIngredientIds: shoppingIngIds,
+        })
+        .where(eq(mealPlans.id, plan.id));
+
+      // Update in-memory for this response
+      (plan as any).plan = newPlan;
+      (plan as any).recipeIds = allIds;
+      (plan as any).shoppingList = backfilledShoppingList;
+      (plan as any).shoppingIngredientIds = shoppingIngIds;
+    } catch (err) {
+      console.error(`[meal-plans backfill] Error for plan ${plan.id}:`, err);
+    }
+  }
 
   res.json(toSnake(result));
 });
