@@ -26,13 +26,15 @@ struct RecipeDetailView: View {
                     // Hero image - tappable to open video
                     if let data = recipe.thumbnailData,
                        let uiImage = UIImage(data: data) {
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 380)
-                            .clipped()
-                            .onTapGesture { openVideo() }
+                        GeometryReader { geo in
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: geo.size.width, height: 380)
+                                .clipped()
+                        }
+                        .frame(height: 380)
+                        .onTapGesture { openVideo() }
                     }
 
                     VStack(alignment: .leading, spacing: 24) {
