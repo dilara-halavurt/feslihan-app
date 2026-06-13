@@ -353,6 +353,8 @@ struct Bubble: Identifiable {
     var speed: Double
     var size: CGFloat
     var color: Color
+    var startTime: Date = .now
+    var elapsed: TimeInterval = 0
 }
 
 struct BubbleGameView: View {
@@ -366,11 +368,18 @@ struct BubbleGameView: View {
     @State private var popped: Set<String> = []
     @State private var popScales: [String: CGFloat] = [:]
     @State private var gameStarted = false
-    @State private var yOffsets: [UUID: CGFloat] = [:]
     @State private var queue: [String] = []
     @State private var screenSize: CGSize = .zero
+    @State private var isPaused = false
 
     private let maxOnScreen = 12
+
+    private func bubbleY(for bubble: Bubble, now: Date) -> CGFloat {
+        let totalDistance = screenSize.height + bubble.size * 2
+        let elapsedTime = isPaused ? bubble.elapsed : bubble.elapsed + now.timeIntervalSince(bubble.startTime)
+        let progress = min(elapsedTime / bubble.speed, 1.0)
+        return -bubble.size + totalDistance * progress
+    }
 
     var body: some View {
         ZStack {
@@ -451,25 +460,46 @@ struct BubbleGameView: View {
                     Spacer()
                 } else {
                     GeometryReader { geo in
-                        ZStack {
-                            ForEach(bubbles) { bubble in
-                                BubbleView(
-                                    name: bubble.name,
-                                    size: bubble.size,
-                                    isSelected: selected.contains(bubble.name),
-                                    color: bubble.color
-                                )
-                                .scaleEffect(popScales[bubble.name] ?? 1.0)
-                                .position(
-                                    x: bubble.x * geo.size.width,
-                                    y: yOffsets[bubble.id] ?? -bubble.size
-                                )
-                                .onTapGesture {
-                                    tapBubble(bubble)
+                        TimelineView(.animation(paused: isPaused)) { timeline in
+                            let now = timeline.date
+                            ZStack {
+                                ForEach(bubbles) { bubble in
+                                    BubbleView(
+                                        name: bubble.name,
+                                        size: bubble.size,
+                                        isSelected: selected.contains(bubble.name),
+                                        color: bubble.color
+                                    )
+                                    .scaleEffect(popScales[bubble.name] ?? 1.0)
+                                    .position(
+                                        x: bubble.x * geo.size.width,
+                                        y: bubbleY(for: bubble, now: now)
+                                    )
+                                    .onTapGesture {
+                                        tapBubble(bubble, now: now)
+                                    }
                                 }
+                            }
+                            .onChange(of: now) { _, newNow in
+                                cleanupOffscreen(now: newNow)
                             }
                         }
                         .clipped()
+                        .simultaneousGesture(
+                            LongPressGesture(minimumDuration: 0.3)
+                                .sequenced(before: DragGesture(minimumDistance: 0))
+                                .onChanged { value in
+                                    switch value {
+                                    case .second(true, _):
+                                        if !isPaused { pauseGame() }
+                                    default:
+                                        break
+                                    }
+                                }
+                                .onEnded { _ in
+                                    if isPaused { resumeGame() }
+                                }
+                        )
                         .onAppear {
                             screenSize = geo.size
                             startGame()
@@ -518,33 +548,51 @@ struct BubbleGameView: View {
         }
     }
 
+    private func pauseGame() {
+        isPaused = true
+        let now = Date()
+        // Freeze elapsed time for each bubble
+        for i in bubbles.indices {
+            bubbles[i].elapsed += now.timeIntervalSince(bubbles[i].startTime)
+        }
+    }
+
+    private func resumeGame() {
+        isPaused = false
+        let now = Date()
+        // Reset start time so elapsed calculation works from now
+        for i in bubbles.indices {
+            bubbles[i].startTime = now
+        }
+    }
+
     private func launchBubble(name: String) {
+        guard !isPaused else {
+            queue.insert(name, at: 0)
+            return
+        }
         let bubble = Bubble(
             name: name,
             x: CGFloat.random(in: 0.12...0.88),
             delay: 0,
             speed: Double.random(in: 6...9),
             size: CGFloat.random(in: 55...80),
-            color: bubbleColors.randomElement()!
+            color: bubbleColors.randomElement()!,
+            startTime: .now,
+            elapsed: 0
         )
         bubbles.append(bubble)
-        yOffsets[bubble.id] = -bubble.size
+    }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            withAnimation(.linear(duration: bubble.speed)) {
-                yOffsets[bubble.id] = screenSize.height + bubble.size
-            }
-        }
-
-        // When bubble exits screen, remove it and launch next
-        DispatchQueue.main.asyncAfter(deadline: .now() + bubble.speed + 0.1) {
+    private func cleanupOffscreen(now: Date) {
+        let finished = bubbles.filter { bubbleY(for: $0, now: now) > screenSize.height + $0.size }
+        for bubble in finished {
             removeBubble(bubble)
-            recycleOrLaunchNext(name: name)
+            recycleOrLaunchNext(name: bubble.name)
         }
     }
 
     private func removeBubble(_ bubble: Bubble) {
-        yOffsets.removeValue(forKey: bubble.id)
         bubbles.removeAll { $0.id == bubble.id }
     }
 
@@ -560,7 +608,7 @@ struct BubbleGameView: View {
         launchBubble(name: next)
     }
 
-    private func tapBubble(_ bubble: Bubble) {
+    private func tapBubble(_ bubble: Bubble, now: Date) {
         if selected.contains(bubble.name) {
             selected.remove(bubble.name)
         } else {

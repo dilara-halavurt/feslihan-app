@@ -63,6 +63,17 @@ enum APIService {
         return true
     }
 
+    /// Delete a recipe review.
+    static func deleteReview(reviewId: String, userId: String) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/reviews/\(reviewId)?user_id=\(userId)") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse,
+              http.statusCode == 200 else { return false }
+        return true
+    }
+
     /// Fetch all recipe IDs a user has reviewed/tried.
     static func fetchUserReviews(userId: String) async -> [UserReviewDTO] {
         guard let url = URL(string: "\(baseURL)/users/\(userId)/reviews") else { return [] }

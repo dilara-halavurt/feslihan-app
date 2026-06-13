@@ -170,7 +170,6 @@ enum ClaudeService {
         return MealPlan(
             days: days,
             shoppingList: planJSON.shoppingList ?? [],
-            shoppingIngredientIds: planJSON.shoppingIngredientIds ?? [],
             recipeIds: planJSON.recipeIds ?? [],
             avgCaloriesPerDay: planJSON.avgCaloriesPerDay
         )
@@ -181,15 +180,13 @@ enum ClaudeService {
 
 private struct MealPlanJSON: Decodable {
     let days: [MealPlanDayJSON]
-    let shoppingList: [String]?
-    let shoppingIngredientIds: [String]?
+    let shoppingList: [ShoppingListItem]?
     let recipeIds: [String]?
     let avgCaloriesPerDay: Int?
 
     enum CodingKeys: String, CodingKey {
         case days
         case shoppingList = "shopping_list"
-        case shoppingIngredientIds = "shopping_ingredient_ids"
         case recipeIds = "recipe_ids"
         case avgCaloriesPerDay = "avg_calories_per_day"
     }

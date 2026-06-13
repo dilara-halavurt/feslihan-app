@@ -5,7 +5,7 @@ import { db } from "./db.js";
 import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans, userPantry, userShoppingList, recipeReviews } from "./schema.js";
 import { uploadImage, s3KeyFromUrl, getImage } from "./s3.js";
 import { analyzeRecipe, analyzeNutrition, generateMealPlan, classifyIngredients, classifyFreezerFriendly } from "./ai.js";
-import { eq, desc, inArray, and, sql } from "drizzle-orm";
+import { eq, desc, inArray, and, sql, isNull } from "drizzle-orm";
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
@@ -247,20 +247,20 @@ function fixTurkish(name: string): string {
   return turkishCapitalize(fixed);
 }
 
-async function resolveIngredientIds(names: string[]): Promise<string[]> {
-  if (!names || names.length === 0) return [];
+async function resolveIngredientMap(names: string[]): Promise<Map<string, string>> {
+  const nameToId = new Map<string, string>();
+  if (!names || names.length === 0) return nameToId;
 
   const normalized = names.map((n) => fixTurkish(n)).filter(Boolean);
-  if (normalized.length === 0) return [];
+  if (normalized.length === 0) return nameToId;
 
-  // Register any new ingredients
   const unique = [...new Set(normalized)];
   const existing = await db
     .select({ id: ingredients.id, name: ingredients.name })
     .from(ingredients)
     .where(inArray(ingredients.name, unique));
 
-  const nameToId = new Map(existing.map((r) => [r.name, r.id]));
+  for (const r of existing) nameToId.set(r.name, r.id);
   const newNames = unique.filter((n) => !nameToId.has(n));
 
   if (newNames.length > 0) {
@@ -275,7 +275,67 @@ async function resolveIngredientIds(names: string[]): Promise<string[]> {
     console.log(`Registered ${newNames.length} new ingredient(s): ${newNames.join(", ")}`);
   }
 
+  return nameToId;
+}
+
+async function resolveIngredientIds(names: string[]): Promise<string[]> {
+  if (!names || names.length === 0) return [];
+  const normalized = names.map((n) => fixTurkish(n)).filter(Boolean);
+  const nameToId = await resolveIngredientMap(names);
   return normalized.map((n) => nameToId.get(n)).filter(Boolean) as string[];
+}
+
+type ShoppingListItem = { name: string; amount: string; ingredient_id: string };
+
+async function buildShoppingListFromRecipes(recipeIds: string[]): Promise<ShoppingListItem[]> {
+  if (!recipeIds || recipeIds.length === 0) return [];
+
+  const recipeRows = await db
+    .select({
+      ingredientsWithMeasures: recipes.ingredientsWithMeasures,
+    })
+    .from(recipes)
+    .where(inArray(recipes.id, recipeIds));
+
+  // Aggregate ingredients, dedup by name
+  const map = new Map<string, { displayName: string; amounts: string[] }>();
+  const order: string[] = [];
+
+  for (const row of recipeRows) {
+    const ings = row.ingredientsWithMeasures as { name: string; amount: string }[] ?? [];
+    for (const ing of ings) {
+      const name = (ing.name ?? "").trim();
+      const amount = (ing.amount ?? "").trim();
+      if (!name) continue;
+      const key = name.toLocaleLowerCase("tr-TR");
+      if (!map.has(key)) {
+        order.push(key);
+        map.set(key, { displayName: name, amounts: [] });
+      }
+      if (amount) {
+        map.get(key)!.amounts.push(amount);
+      }
+    }
+  }
+
+  // Resolve ingredient IDs
+  const displayNames = order.map((k) => map.get(k)!.displayName);
+  const idMap = await resolveIngredientMap(displayNames);
+
+  return order.map((key) => {
+    const entry = map.get(key)!;
+    const fixedName = fixTurkish(entry.displayName);
+    const amounts = entry.amounts;
+    const amount =
+      amounts.length === 0 ? "" :
+      amounts.length === 1 ? amounts[0] :
+      amounts.join(" + ");
+    return {
+      name: entry.displayName,
+      amount,
+      ingredient_id: idMap.get(fixedName) ?? "",
+    };
+  }).filter((item) => item.ingredient_id);
 }
 
 async function resolveIngredientNames(ids: string[]): Promise<string[]> {
@@ -1211,11 +1271,22 @@ app.get("/creators/:username", async (req, res) => {
     return;
   }
 
-  const user = result[0];
+  let user = result[0];
 
-  // If creator has no profile picture, try fetching it in the background
+  // If creator has no profile picture, fetch it before responding
   if (!user.profilePictureUrl) {
-    ensureCreator(user.username, user.platform).catch(() => {});
+    try {
+      await ensureCreator(user.username, user.platform);
+      // Re-fetch to get the updated profile picture URL
+      const updated = await db
+        .select()
+        .from(platformCreators)
+        .where(eq(platformCreators.username, req.params.username.toLowerCase()))
+        .limit(1);
+      if (updated.length > 0) {
+        user = updated[0];
+      }
+    } catch {}
   }
 
   res.json({
@@ -1388,11 +1459,16 @@ app.put("/users/:userId/recipes/:recipeId/favorite", async (req, res) => {
 
 // Save a meal plan
 app.post("/meal-plans", async (req, res) => {
-  const { user_id, name, plan, recipe_ids, shopping_list, shopping_ingredient_ids } = req.body;
+  const { user_id, name, plan, recipe_ids, shopping_list } = req.body;
   if (!user_id || !plan) {
     res.status(400).json({ error: "user_id and plan required" });
     return;
   }
+
+  // Build shopping list from recipes if not explicitly provided
+  const resolvedShoppingList: ShoppingListItem[] = shopping_list && shopping_list.length > 0
+    ? shopping_list
+    : await buildShoppingListFromRecipes(recipe_ids ?? []);
 
   const result = await db
     .insert(mealPlans)
@@ -1401,8 +1477,8 @@ app.post("/meal-plans", async (req, res) => {
       name: name || "Yemek Planı",
       plan,
       recipeIds: recipe_ids ?? [],
-      shoppingList: shopping_list ?? [],
-      shoppingIngredientIds: shopping_ingredient_ids ?? [],
+      shoppingList: resolvedShoppingList,
+      shoppingIngredientIds: [],
     })
     .returning();
 
@@ -1420,11 +1496,13 @@ app.get("/users/:userId/meal-plans", async (req, res) => {
   // Backfill old plans that have no shopping_list or recipe_ids
   for (const plan of result) {
     const planData = plan.plan as any;
-    const shoppingListCol = plan.shoppingList as string[];
+    const shoppingListCol = plan.shoppingList as any[];
     const recipeIdsCol = plan.recipeIds as string[];
+
+    // Detect if shopping_list needs migration: empty, or old string[] format
+    const isOldFormat = shoppingListCol?.length > 0 && typeof shoppingListCol[0] === "string";
     const needsBackfill =
-      (!shoppingListCol || shoppingListCol.length === 0) &&
-      planData?.days;
+      ((!shoppingListCol || shoppingListCol.length === 0) && planData?.days) || isOldFormat;
 
     if (!needsBackfill) continue;
 
@@ -1434,10 +1512,6 @@ app.get("/users/:userId/meal-plans", async (req, res) => {
         .insert(platformCreators)
         .values({ username: "feslihan", platform: "other", displayName: "Feslihan AI" })
         .onConflictDoNothing();
-
-      // Extract shopping_list from plan JSON (legacy) or build from ingredients
-      let backfilledShoppingList: string[] = planData.shopping_list ?? [];
-      const allIngredientNames: string[] = [];
 
       // Build titleToId for existing user recipes
       const mappings = await db
@@ -1452,69 +1526,63 @@ app.get("/users/:userId/meal-plans", async (req, res) => {
         titleToId[r.title] = r.id;
       }
 
-      // Create missing recipes and resolve IDs
-      for (const day of planData.days) {
-        for (const meal of day.meals ?? []) {
-          if (!meal.name) continue;
-          const parts = (meal.name as string).split("+").map((s: string) => s.trim());
-          for (const title of parts) {
-            if (titleToId[title]) continue;
-            const ingNames: string[] = (meal.ingredients ?? []).map(
-              (i: string) => i.charAt(0).toUpperCase() + i.slice(1)
-            );
-            const ingIds = await resolveIngredientIds(ingNames);
-            const url = `ai://meal-plan/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-            const [created] = await db
-              .insert(recipes)
-              .values({
-                platform: "other",
-                platformUser: "feslihan",
-                url,
-                title,
-                description: meal.description ?? "",
-                ingredientsWithMeasures: ingNames.map((n: string) => ({ name: n, amount: "" })),
-                ingredientsWithoutMeasures: ingIds,
-                caloriesTotalKcal: meal.calories ?? null,
-                cookingTimeMinutes: 30,
-                tags: [],
-                requestedBy: req.params.userId,
-              })
-              .returning();
-            titleToId[title] = created.id;
-            await db
-              .insert(userRecipes)
-              .values({ userId: req.params.userId, recipeId: created.id })
-              .onConflictDoNothing();
-          }
-          // Collect ingredient names for shopping list fallback
-          for (const ing of meal.ingredients ?? []) {
-            allIngredientNames.push(ing.charAt(0).toUpperCase() + ing.slice(1));
+      // Create missing recipes and resolve IDs (only for plans that need recipe creation)
+      if (!recipeIdsCol || recipeIdsCol.length === 0) {
+        for (const day of planData.days ?? []) {
+          for (const meal of day.meals ?? []) {
+            if (!meal.name) continue;
+            const parts = (meal.name as string).split("+").map((s: string) => s.trim());
+            for (const title of parts) {
+              if (titleToId[title]) continue;
+              const ingNames: string[] = (meal.ingredients ?? []).map(
+                (i: string) => i.charAt(0).toUpperCase() + i.slice(1)
+              );
+              const ingIds = await resolveIngredientIds(ingNames);
+              const url = `ai://meal-plan/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+              const [created] = await db
+                .insert(recipes)
+                .values({
+                  platform: "other",
+                  platformUser: "feslihan",
+                  url,
+                  title,
+                  description: meal.description ?? "",
+                  ingredientsWithMeasures: ingNames.map((n: string) => ({ name: n, amount: "" })),
+                  ingredientsWithoutMeasures: ingIds,
+                  caloriesTotalKcal: meal.calories ?? null,
+                  cookingTimeMinutes: 30,
+                  tags: [],
+                  requestedBy: req.params.userId,
+                })
+                .returning();
+              titleToId[title] = created.id;
+              await db
+                .insert(userRecipes)
+                .values({ userId: req.params.userId, recipeId: created.id })
+                .onConflictDoNothing();
+            }
           }
         }
       }
-
-      // Build shopping list from ingredients if legacy list is also empty
-      if (backfilledShoppingList.length === 0) {
-        const unique = [...new Set(allIngredientNames)];
-        backfilledShoppingList = unique;
-      }
-
-      const shoppingIngIds = await resolveIngredientIds(
-        backfilledShoppingList.map(item => parseIngredientLine(item).name).filter(Boolean)
-      );
 
       // Rebuild plan with recipe_ids
       const newDays = (planData.days ?? []).map((day: any) => ({
         day_name: day.day_name,
         meals: (day.meals ?? []).map((meal: any) => {
-          const parts = (meal.name as string).split("+").map((s: string) => s.trim());
+          if (meal.recipe_ids) return { meal_type: meal.meal_type, recipe_ids: meal.recipe_ids };
+          const parts = (meal.name as string || "").split("+").map((s: string) => s.trim());
           const ids = parts.map((t: string) => titleToId[t]).filter(Boolean);
           return { meal_type: meal.meal_type, recipe_ids: ids };
         }),
       }));
 
-      const allIds = Object.values(titleToId);
+      const allIds = recipeIdsCol?.length > 0
+        ? recipeIdsCol
+        : Object.values(titleToId);
       const newPlan = { days: newDays, avg_calories_per_day: planData.avg_calories_per_day };
+
+      // Build shopping list from recipe ingredients
+      const newShoppingList = await buildShoppingListFromRecipes(allIds);
 
       // Update DB
       await db
@@ -1522,16 +1590,14 @@ app.get("/users/:userId/meal-plans", async (req, res) => {
         .set({
           plan: newPlan,
           recipeIds: allIds,
-          shoppingList: backfilledShoppingList,
-          shoppingIngredientIds: shoppingIngIds,
+          shoppingList: newShoppingList,
         })
         .where(eq(mealPlans.id, plan.id));
 
       // Update in-memory for this response
       (plan as any).plan = newPlan;
       (plan as any).recipeIds = allIds;
-      (plan as any).shoppingList = backfilledShoppingList;
-      (plan as any).shoppingIngredientIds = shoppingIngIds;
+      (plan as any).shoppingList = newShoppingList;
     } catch (err) {
       console.error(`[meal-plans backfill] Error for plan ${plan.id}:`, err);
     }
@@ -1543,13 +1609,17 @@ app.get("/users/:userId/meal-plans", async (req, res) => {
 // Update a meal plan
 app.put("/meal-plans/:id", async (req, res) => {
   try {
-    const { name, plan, recipe_ids, shopping_list, shopping_ingredient_ids } = req.body;
+    const { name, plan, recipe_ids, shopping_list } = req.body;
     const updates: Record<string, any> = {};
     if (name !== undefined) updates.name = name;
     if (plan !== undefined) updates.plan = plan;
     if (recipe_ids !== undefined) updates.recipeIds = recipe_ids;
     if (shopping_list !== undefined) updates.shoppingList = shopping_list;
-    if (shopping_ingredient_ids !== undefined) updates.shoppingIngredientIds = shopping_ingredient_ids;
+
+    // Auto-rebuild shopping list from recipes when recipe_ids change but no explicit shopping_list
+    if (recipe_ids !== undefined && shopping_list === undefined) {
+      updates.shoppingList = await buildShoppingListFromRecipes(recipe_ids);
+    }
 
     if (Object.keys(updates).length === 0) {
       res.status(400).json({ error: "No fields to update" });
@@ -2070,19 +2140,7 @@ app.post("/ai/meal-plan", async (req, res) => {
       available_recipes: availableRecipes,
     });
 
-    // Normalize shopping list casing
-    const shoppingList: string[] = (result.shopping_list ?? []).map((item: string) =>
-      item.charAt(0).toUpperCase() + item.slice(1)
-    );
-
-    // Parse shopping list items into names (for ingredient ID resolution)
-    const shoppingIngredientNames = shoppingList.map((item: string) => {
-      const parsed = parseIngredientLine(item);
-      return parsed.name;
-    }).filter(Boolean);
-
-    // Resolve ingredient names to IDs in the ingredients table
-    const shoppingIngredientIds = await resolveIngredientIds(shoppingIngredientNames);
+    // Shopping list will be built from saved recipes after they're created
 
     // Ensure "feslihan" platform creator exists for AI-generated recipes
     await db
@@ -2173,10 +2231,12 @@ app.post("/ai/meal-plan", async (req, res) => {
       }),
     }));
 
+    // Build shopping list from saved recipe ingredients
+    const shoppingList = await buildShoppingListFromRecipes(allRecipeIds);
+
     res.json({
       days: leanDays,
       shopping_list: shoppingList,
-      shopping_ingredient_ids: shoppingIngredientIds,
       avg_calories_per_day: result.avg_calories_per_day ?? null,
       recipe_ids: allRecipeIds,
     });
@@ -2253,6 +2313,43 @@ app.post("/admin/map-all-recipes", async (_req, res) => {
     users_count: allUsers.length,
     mappings_created: created,
   });
+});
+
+// Fill missing profile pictures for all platform creators
+app.post("/admin/fill-creator-pictures", async (_req, res) => {
+  const creators = await db
+    .select()
+    .from(platformCreators)
+    .where(isNull(platformCreators.profilePictureUrl));
+
+  console.log(`[Admin] Found ${creators.length} creators without profile pictures`);
+
+  let filled = 0;
+  let failed = 0;
+  for (const creator of creators) {
+    try {
+      await ensureCreator(creator.username, creator.platform);
+      // Check if it was actually filled
+      const updated = await db
+        .select({ profilePictureUrl: platformCreators.profilePictureUrl })
+        .from(platformCreators)
+        .where(eq(platformCreators.username, creator.username))
+        .limit(1);
+      if (updated[0]?.profilePictureUrl) {
+        filled++;
+        console.log(`  [OK] ${creator.username}`);
+      } else {
+        failed++;
+        console.log(`  [SKIP] ${creator.username} - no picture found`);
+      }
+    } catch (err) {
+      failed++;
+      console.log(`  [ERR] ${creator.username} - ${err}`);
+    }
+  }
+
+  console.log(`[Admin] Done: ${filled} filled, ${failed} failed out of ${creators.length}`);
+  res.json({ total: creators.length, filled, failed });
 });
 
 // Seed predefined tags on startup

@@ -122,7 +122,7 @@ struct SavedPlanItem: Identifiable, Codable {
     let name: String
     let plan: SavedPlanData
     let recipe_ids: [String]?
-    let shopping_list: [String]?
+    let shopping_list: [ShoppingListItem]?
     let created_at: String
 
     var createdDate: Date? {
@@ -167,7 +167,7 @@ struct SavedPlanItem: Identifiable, Codable {
 
 struct SavedPlanData: Codable {
     let days: [SavedPlanDay]?
-    let shopping_list: [String]?  // Legacy: old plans stored this inside plan JSON
+    let shopping_list: [ShoppingListItem]?  // Legacy: old plans stored this inside plan JSON
     let avg_calories_per_day: Int?
 }
 
@@ -431,7 +431,7 @@ private struct SavedPlanDetailSheet: View {
         // New plans: shopping_list in separate DB column; old plans: inside plan JSON
         let list = plan.shopping_list ?? plan.plan.shopping_list ?? []
         if !list.isEmpty {
-            return list.map { ShoppingListItem.parse($0) }
+            return list
         }
         // Fallback for very old plans: build from meal ingredients
         var seen = Set<String>()

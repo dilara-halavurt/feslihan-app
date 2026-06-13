@@ -296,11 +296,26 @@ struct RecipeReviewSheet: View {
                 }
                 .disabled(rating == 0 || isSaving)
 
-                Button("Atla") {
-                    onDone()
+                if existingReview != nil {
+                    Button(action: deleteReview) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 13))
+                            Text("Denediklerimden Kaldır")
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 40)
+                        .foregroundStyle(DS.tomato)
+                    }
+                    .disabled(isSaving)
+                } else {
+                    Button("Atla") {
+                        onDone()
+                    }
+                    .font(.label())
+                    .foregroundStyle(DS.dust)
                 }
-                .font(.label())
-                .foregroundStyle(DS.dust)
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
@@ -337,6 +352,17 @@ struct RecipeReviewSheet: View {
             } else {
                 print("[Review] No recipeId or userId, skipping save")
             }
+            onDone()
+        }
+    }
+
+    private func deleteReview() {
+        guard let review = existingReview,
+              let userId = Clerk.shared.user?.id else { return }
+        isSaving = true
+        Task {
+            let success = await APIService.deleteReview(reviewId: review.id, userId: userId)
+            print("[Review] Delete \(success ? "OK" : "FAILED") for review \(review.id)")
             onDone()
         }
     }

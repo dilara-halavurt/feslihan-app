@@ -600,6 +600,22 @@ struct RecipeListView: View {
                         } label: {
                             Label("Plana Ekle", systemImage: "calendar.badge.plus")
                         }
+
+                        if showFavoritesOnly {
+                            Button(role: .destructive) {
+                                Task { await unfavoriteRecipe(recipe) }
+                            } label: {
+                                Label("Beğenmekten Vazgeç", systemImage: "heart.slash")
+                            }
+                        }
+
+                        if showTriedOnly {
+                            Button(role: .destructive) {
+                                Task { await removeFromTried(recipe) }
+                            } label: {
+                                Label("Denediklerimden Kaldır", systemImage: "xmark.seal")
+                            }
+                        }
                     }
                 }
             }
@@ -767,6 +783,30 @@ struct RecipeListView: View {
         if await APIService.deleteUserRecipe(userId: userId, recipeId: backendId) {
             modelContext.delete(recipe)
             try? modelContext.save()
+        }
+    }
+
+    private func unfavoriteRecipe(_ recipe: Recipe) async {
+        guard let userId = Clerk.shared.user?.id,
+              let url = recipe.sourceURL,
+              let dto = await APIService.lookup(url: url),
+              let backendId = dto.id else { return }
+        recipe.isFavorite = false
+        try? modelContext.save()
+        _ = await APIService.toggleFavorite(userId: userId, recipeId: backendId, isFavorite: false)
+    }
+
+    private func removeFromTried(_ recipe: Recipe) async {
+        guard let userId = Clerk.shared.user?.id,
+              let url = recipe.sourceURL else { return }
+        // Find the review for this recipe
+        let reviews = await APIService.fetchUserReviews(userId: userId)
+        let remoteRecipes = await APIService.fetchUserRecipes(userId: userId)
+        guard let backendRecipe = remoteRecipes.first(where: { $0.url == url }),
+              let backendId = backendRecipe.id,
+              let review = reviews.first(where: { $0.recipe_id == backendId }) else { return }
+        if await APIService.deleteReview(reviewId: review.id, userId: userId) {
+            triedRecipeIds.remove(url)
         }
     }
 

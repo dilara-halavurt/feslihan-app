@@ -83,12 +83,14 @@ enum EatingStyle: String, CaseIterable {
 }
 
 enum MealPrepPeriod: String, CaseIterable {
+    case daily = "Günlük"
     case weekly = "Haftalık"
     case biweekly = "2 Haftalık"
     case monthly = "Aylık"
 
     var icon: String {
         switch self {
+        case .daily: return "sun.max"
         case .weekly: return "calendar"
         case .biweekly: return "calendar.badge.clock"
         case .monthly: return "calendar.circle"
@@ -97,6 +99,7 @@ enum MealPrepPeriod: String, CaseIterable {
 
     var subtitle: String {
         switch self {
+        case .daily: return "1 günlük plan"
         case .weekly: return "7 günlük plan"
         case .biweekly: return "14 günlük plan"
         case .monthly: return "30 günlük plan"
@@ -105,6 +108,7 @@ enum MealPrepPeriod: String, CaseIterable {
 
     var apiValue: String {
         switch self {
+        case .daily: return "1 gün"
         case .weekly: return "7 gün"
         case .biweekly: return "14 gün"
         case .monthly: return "30 gün"
@@ -1079,7 +1083,7 @@ private struct ManualMealPlanBuilder: View {
     @State private var showShoppingList = false
     @State private var isLoadingRecipes = true
 
-    private let dayCountOptions = [7, 14, 30]
+    private let dayCountOptions = [1, 7, 14, 30]
     private let turkishDays = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 
     private var totalMeals: Int { days.flatMap(\.meals).count }
@@ -1096,10 +1100,11 @@ private struct ManualMealPlanBuilder: View {
         Array(Set(days.flatMap { $0.meals.flatMap(\.recipeIds) }))
     }
 
-    private var aggregatedShoppingList: [String] {
+    private var aggregatedShoppingList: [ShoppingListItem] {
         struct Entry {
             let displayName: String
             var amounts: [String]
+            var ingredientId: String?
         }
         var map: [String: Entry] = [:]
         var order: [String] = []
@@ -1108,14 +1113,16 @@ private struct ManualMealPlanBuilder: View {
             for meal in day.meals {
                 for recipeId in meal.recipeIds {
                     guard let recipe = recipeById[recipeId] else { continue }
-                    for item in recipe.ingredients_with_measures {
+                    let ingredientIds = recipe.ingredients_without_measures
+                    for (index, item) in recipe.ingredients_with_measures.enumerated() {
                         let name = (item["name"] ?? "").trimmingCharacters(in: .whitespaces)
                         let amount = (item["amount"] ?? "").trimmingCharacters(in: .whitespaces)
                         guard !name.isEmpty else { continue }
                         let key = name.lowercased()
                         if map[key] == nil {
                             order.append(key)
-                            map[key] = Entry(displayName: name, amounts: [])
+                            let ingId = index < ingredientIds.count ? ingredientIds[index] : nil
+                            map[key] = Entry(displayName: name, amounts: [], ingredientId: ingId)
                         }
                         if !amount.isEmpty {
                             map[key]!.amounts.append(amount)
@@ -1127,9 +1134,11 @@ private struct ManualMealPlanBuilder: View {
 
         return order.compactMap { key in
             guard let entry = map[key] else { return nil }
-            if entry.amounts.isEmpty { return entry.displayName }
-            if entry.amounts.count == 1 { return "\(entry.amounts[0]) \(entry.displayName)" }
-            return "\(entry.amounts.joined(separator: " + ")) \(entry.displayName)"
+            let amount: String
+            if entry.amounts.isEmpty { amount = "" }
+            else if entry.amounts.count == 1 { amount = entry.amounts[0] }
+            else { amount = entry.amounts.joined(separator: " + ") }
+            return ShoppingListItem(name: entry.displayName, amount: amount, ingredientId: entry.ingredientId)
         }
     }
 
@@ -1305,7 +1314,7 @@ private struct ManualMealPlanBuilder: View {
             }
         }
         .sheet(isPresented: $showShoppingList) {
-            ShoppingListSheet(items: aggregatedShoppingList.map { ShoppingListItem.parse($0) })
+            ShoppingListSheet(items: aggregatedShoppingList)
         }
         .task {
             if let userId = Clerk.shared.user?.id {
@@ -1320,7 +1329,9 @@ private struct ManualMealPlanBuilder: View {
     }
 
     private func dayName(for index: Int) -> String {
-        if dayCount <= 7 {
+        if dayCount == 1 {
+            return "Bugün"
+        } else if dayCount <= 7 {
             return turkishDays[index % 7]
         } else if dayCount <= 14 {
             let week = index / 7 + 1
@@ -1386,13 +1397,18 @@ private struct ManualMealPlanBuilder: View {
                 "avg_calories_per_day": avgCaloriesPerDay ?? 0
             ]
 
+            let shoppingListDicts = aggregatedShoppingList.map { item -> [String: String] in
+                var dict: [String: String] = ["name": item.name, "amount": item.amount]
+                if let id = item.ingredientId { dict["ingredient_id"] = id }
+                return dict
+            }
+
             let body: [String: Any] = [
                 "user_id": userId,
                 "name": name,
                 "plan": planData,
                 "recipe_ids": allRecipeIds,
-                "shopping_list": aggregatedShoppingList,
-                "shopping_ingredient_ids": [] as [String]
+                "shopping_list": shoppingListDicts
             ]
 
             var request = URLRequest(url: url)
@@ -1584,7 +1600,7 @@ struct MealPlanResultView: View {
         }
         .sheet(isPresented: $showShoppingList) {
             if let plan {
-                ShoppingListSheet(items: plan.shoppingList.map { ShoppingListItem.parse($0) })
+                ShoppingListSheet(items: plan.shoppingList)
             }
         }
         .sheet(item: $swappingMeal) { meal in
@@ -1683,13 +1699,18 @@ struct MealPlanResultView: View {
                 "avg_calories_per_day": plan.avgCaloriesPerDay ?? 0
             ]
 
+            let shoppingListDicts = plan.shoppingList.map { item -> [String: String] in
+                var dict: [String: String] = ["name": item.name, "amount": item.amount]
+                if let id = item.ingredientId { dict["ingredient_id"] = id }
+                return dict
+            }
+
             let body: [String: Any] = [
                 "user_id": userId,
                 "name": "\(period.rawValue) - \(peopleCount.rawValue)",
                 "plan": planData,
                 "recipe_ids": plan.recipeIds,
-                "shopping_list": plan.shoppingList,
-                "shopping_ingredient_ids": plan.shoppingIngredientIds
+                "shopping_list": shoppingListDicts
             ]
 
             var request = URLRequest(url: url)
@@ -1876,8 +1897,7 @@ private struct DayCard: View {
 
 struct MealPlan {
     var days: [MealPlanDay]
-    let shoppingList: [String]
-    let shoppingIngredientIds: [String]
+    let shoppingList: [ShoppingListItem]
     let recipeIds: [String]
     let avgCaloriesPerDay: Int?
 
@@ -1923,11 +1943,41 @@ struct MealPlanMeal: Identifiable {
 
 // MARK: - Shopping List Item
 
-struct ShoppingListItem: Hashable {
+struct ShoppingListItem: Hashable, Codable {
     let name: String
     let amount: String
+    let ingredientId: String?
 
-    /// Parse an AI shopping list string like "2 kg tavuk göğsü" into name + amount.
+    init(name: String, amount: String, ingredientId: String? = nil) {
+        self.name = name
+        self.amount = amount
+        self.ingredientId = ingredientId
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case amount
+        case ingredientId = "ingredient_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        // Handle legacy string format: "2 kg tavuk göğsü"
+        if let container = try? decoder.singleValueContainer(),
+           let raw = try? container.decode(String.self) {
+            let parsed = ShoppingListItem.parse(raw)
+            self.name = parsed.name
+            self.amount = parsed.amount
+            self.ingredientId = nil
+            return
+        }
+        // New object format
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.amount = try container.decodeIfPresent(String.self, forKey: .amount) ?? ""
+        self.ingredientId = try container.decodeIfPresent(String.self, forKey: .ingredientId)
+    }
+
+    /// Parse a legacy string like "2 kg tavuk göğsü" into name + amount.
     static func parse(_ raw: String) -> ShoppingListItem {
         let pattern = #"^([\d½¼¾⅓⅔.,/]+\s*(?:kg|g|gr|ml|lt?|litre|adet|tane|paket|demet|diş|tutam|dal|yaprak|kaşığı?|kasigi?|bardağı?|bardagi?|kutu|kavanoz|şişe|sise|dilim|porsiyon|avuç?|avuc?|kase|tabak|somun|baş)\s*(?:\([^)]*\))?)\s+(.+)"#
         if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
@@ -1939,7 +1989,6 @@ struct ShoppingListItem: Hashable {
                 amount: String(raw[amountRange]).trimmingCharacters(in: .whitespaces)
             )
         }
-        // Try simple number prefix: "6 yumurta"
         let simplePattern = #"^([\d½¼¾⅓⅔.,/]+)\s+(.+)"#
         if let regex = try? NSRegularExpression(pattern: simplePattern),
            let match = regex.firstMatch(in: raw, range: NSRange(location: 0, length: (raw as NSString).length)),
@@ -1950,7 +1999,6 @@ struct ShoppingListItem: Hashable {
                 amount: String(raw[numRange]).trimmingCharacters(in: .whitespaces)
             )
         }
-        // No amount (e.g. "Tuz", "Karabiber")
         return ShoppingListItem(name: raw, amount: "")
     }
 }
