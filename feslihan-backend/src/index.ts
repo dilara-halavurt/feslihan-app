@@ -1653,13 +1653,15 @@ app.post("/users/:userId/pantry", async (req, res) => {
     .from(ingredients)
     .where(inArray(ingredients.name, ingredient_names));
 
-  // Also try lowercase match for any missed
+  // Also try lowercase match, then strip parenthetical notes e.g. "Tereyağı(kalıp için)" -> "Tereyağı"
   const foundNames = new Set(found.map((f) => f.name));
   const missed = ingredient_names.filter((n) => !foundNames.has(n));
   if (missed.length > 0) {
     const allIngredients = await db.select({ id: ingredients.id, name: ingredients.name }).from(ingredients);
     for (const m of missed) {
-      const match = allIngredients.find((i) => i.name.toLowerCase() === m.toLowerCase());
+      const stripped = m.replace(/\s*\(.*?\)\s*/g, "").trim();
+      const match = allIngredients.find((i) => i.name.toLowerCase() === m.toLowerCase())
+        ?? allIngredients.find((i) => i.name.toLowerCase() === stripped.toLowerCase());
       if (match) found.push(match);
     }
   }
@@ -1742,7 +1744,9 @@ app.post("/users/:userId/shopping-list", async (req, res) => {
   if (missed.length > 0) {
     const allIngredients = await db.select({ id: ingredients.id, name: ingredients.name }).from(ingredients);
     for (const m of missed) {
-      const match = allIngredients.find((i) => i.name.toLowerCase() === m.toLowerCase());
+      const stripped = m.replace(/\s*\(.*?\)\s*/g, "").trim();
+      const match = allIngredients.find((i) => i.name.toLowerCase() === m.toLowerCase())
+        ?? allIngredients.find((i) => i.name.toLowerCase() === stripped.toLowerCase());
       if (match) found.push(match);
     }
   }

@@ -357,6 +357,7 @@ struct Bubble: Identifiable {
 
 struct BubbleGameView: View {
     @Binding var selected: Set<String>
+    var excludedNames: Set<String> = []
     var onDone: () -> Void
 
     @State private var ingredientNames: [String] = []
@@ -495,7 +496,7 @@ struct BubbleGameView: View {
         .task {
             let fetched = await APIService.fetchIngredients()
             let all = fetched.isEmpty ? fallbackIngredients : fetched.map { fixTurkishCharacters($0.name) }
-            ingredientNames = all.sorted()
+            ingredientNames = all.filter { !excludedNames.contains($0) }.sorted()
             isLoading = false
         }
     }

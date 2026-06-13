@@ -37,7 +37,8 @@ struct IngredientsView: View {
             }
 
             ForEach(Array(ingredients.enumerated()), id: \.element.id) { index, ingredient in
-                let key = (ingredient.baseName ?? ingredient.name).lowercased()
+                let raw = ingredient.baseName ?? ingredient.name
+            let key = raw.replacingOccurrences(of: "\\s*\\(.*?\\)\\s*", with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces).lowercased()
                 let inPantry = pantryNames.contains(key)
                 let inCart = shoppingListNames.contains(key)
 
@@ -65,7 +66,7 @@ struct IngredientsView: View {
                     // Shopping list status
                     if isLoaded && !inPantry {
                         if inCart {
-                            Image(systemName: "cart.fill.badge.checkmark")
+                            Image(systemName: "cart.badge.checkmark")
                                 .font(.system(size: 15))
                                 .foregroundStyle(DS.ember)
                         } else {

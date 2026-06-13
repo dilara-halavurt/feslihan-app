@@ -7,6 +7,8 @@ struct ShoppingListView: View {
     @State private var items: [ShoppingItemDTO] = []
     @State private var isLoading = true
     @State private var showAddSheet = false
+    @State private var showIngredientPicker = false
+    @State private var isSavingToPantry = false
 
     private var uncheckedItems: [ShoppingItemDTO] {
         items.filter { !$0.is_checked }
@@ -35,8 +37,18 @@ struct ShoppingListView: View {
 
                     Spacer()
 
-                    Button {
-                        showAddSheet = true
+                    Menu {
+                        Button {
+                            showAddSheet = true
+                        } label: {
+                            Label("Baloncuklardan Seç", systemImage: "circle.grid.3x3.fill")
+                        }
+
+                        Button {
+                            showIngredientPicker = true
+                        } label: {
+                            Label("Listeden Seç", systemImage: "list.bullet")
+                        }
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 16, weight: .semibold))
@@ -151,6 +163,30 @@ struct ShoppingListView: View {
                                 .background(DS.flour)
                                 .clipShape(RoundedRectangle(cornerRadius: 14))
                                 .shadow(color: DS.shadowCard, radius: 4, y: 2)
+
+                                Button {
+                                    Task { await saveToPantry() }
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        if isSavingToPantry {
+                                            ProgressView()
+                                                .tint(DS.flour)
+                                                .scaleEffect(0.8)
+                                        } else {
+                                            Image(systemName: "leaf.fill")
+                                                .font(.system(size: 14))
+                                        }
+                                        Text("Kilere Ekle")
+                                            .font(.buttonFont())
+                                    }
+                                    .foregroundStyle(DS.flour)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 46)
+                                    .background(DS.ember)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                }
+                                .disabled(isSavingToPantry)
+                                .padding(.top, 12)
                             }
                         }
                         .padding(.horizontal, 20)
@@ -159,8 +195,18 @@ struct ShoppingListView: View {
                 }
             }
         }
+        .sheet(isPresented: $showIngredientPicker) {
+            IngredientPickerSheet(
+                existingNames: Set(items.map { $0.ingredient_name }),
+                onSave: { names in
+                    Task { await addItems(names: names) }
+                }
+            )
+        }
         .fullScreenCover(isPresented: $showAddSheet) {
-            ShoppingAddSheet { names in
+            ShoppingAddSheet(
+                existingNames: Set(items.map { $0.ingredient_name })
+            ) { names in
                 Task { await addItems(names: names) }
             }
         }
@@ -198,6 +244,24 @@ struct ShoppingListView: View {
                 )
             }
         }
+    }
+
+    private func saveToPantry() async {
+        guard let userId = Clerk.shared.user?.id else { return }
+        let names = checkedItems.map { $0.ingredient_name }
+        guard !names.isEmpty else { return }
+        isSavingToPantry = true
+        let success = await APIService.addToPantry(userId: userId, ingredientNames: names)
+        if success {
+            // Remove checked items from shopping list
+            for item in checkedItems {
+                let _ = await APIService.removeFromShoppingList(userId: userId, itemId: item.id)
+            }
+            withAnimation(.spring(response: 0.3)) {
+                items.removeAll { $0.is_checked }
+            }
+        }
+        isSavingToPantry = false
     }
 
     private func deleteItem(_ item: ShoppingItemDTO) async {
@@ -244,8 +308,19 @@ private struct ShoppingItemRow: View {
                 .lineLimit(1)
 
             Spacer()
+
+            Button(action: onDelete) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DS.dust)
+                    .frame(width: 28, height: 28)
+                    .background(DS.stone.opacity(0.5))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
+        .padding(.leading, 16)
+        .padding(.trailing, 12)
         .frame(height: 48)
         .contextMenu {
             Button(role: .destructive, action: onDelete) {
@@ -258,6 +333,7 @@ private struct ShoppingItemRow: View {
 // MARK: - Add Sheet (uses BubbleGameView)
 
 struct ShoppingAddSheet: View {
+    let existingNames: Set<String>
     let onSave: ([String]) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -267,7 +343,7 @@ struct ShoppingAddSheet: View {
         ZStack {
             DS.cream.ignoresSafeArea()
 
-            BubbleGameView(selected: $selected, onDone: {
+            BubbleGameView(selected: $selected, excludedNames: existingNames, onDone: {
                 let names = Array(selected)
                 onSave(names)
                 dismiss()

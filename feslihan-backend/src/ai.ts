@@ -103,7 +103,18 @@ Onemli kurallar:
 - Miktarlar net olmali (ornegin: "2 su bardagi", "1 tatli kasigi")
 - Icerik baska bir dilde ise Turkce'ye cevir
 - Caption, ses ve gorsellerdeki bilgileri birlestirerek en eksiksiz tarifi olustur
-- base_ingredients: Tekil, kisa, standart malzeme isimleri (tekrarsiz). Ornekler: "Tereyağı", "Yumurta", "Un", "Süt", "Şeker", "Tuz", "Zeytinyağı", "Soğan", "Sarımsak", "Domates", "Biber", "Maydanoz". Aciklama veya miktar EKLEME, sadece malzeme adi yaz. Ilk harf buyuk, Turkce karakterler kullan.
+- base_ingredients: Tekil, kisa, KOK malzeme isimleri (tekrarsiz). SADECE malzemenin temel adi olmali. Ilk harf buyuk, Turkce karakterler kullan.
+  DOGRU ornekler: "Tereyağı", "Yumurta", "Un", "Süt", "Şeker", "Tuz", "Zeytinyağı", "Soğan", "Sarımsak", "Domates", "Biber", "Maydanoz", "Kıyma", "Tavuk Göğsü", "Krema", "Patates"
+  YANLIS - asla yapma:
+  - Ambalaj/paketleme: "Şişe zeytinyağı", "Kutu domates", "Paket maya" → DOGRU: "Zeytinyağı", "Domates", "Maya"
+  - Boyut/miktar: "Büyük soğan", "Orta boy patates", "Küçük kabak" → DOGRU: "Soğan", "Patates", "Kabak"
+  - Hazirlanis/islem: "Rendelenmiş havuç", "Kıyılmış maydanoz", "Ezilmiş sarımsak", "Közlenmiş biber", "Haşlanmış yumurta", "Eritilmiş tereyağı", "Kavrulmuş susam", "Didiklenmiş tavuk" → DOGRU: "Havuç", "Maydanoz", "Sarımsak", "Biber", "Yumurta", "Tereyağı", "Susam", "Tavuk"
+  - Sicaklik/durum: "Sıcak su", "Soğuk tereyağı", "Ilık süt" → DOGRU: "Su", "Tereyağı", "Süt"
+  - Organik/light/yagsiz: "Organik yumurta", "Light yoğurt", "Yağsız kıyma", "Tam yağlı süt" → DOGRU: "Yumurta", "Yoğurt", "Kıyma", "Süt"
+  - Alternatifler: "Zeytinyağı veya tereyağı", "Maydanoz veya dereotu" → DOGRU: ilk malzemeyi sec, sadece "Zeytinyağı", "Maydanoz"
+  - Birlestirme: "Tuz, karabiber, pul biber (baharat seti)" → DOGRU: her birini ayri yaz: "Tuz", "Karabiber", "Pul Biber"
+  - Kullanim notu: "Kızartma için zeytinyağı", "Tel şehriye (çorba için)", "Krema - soğutulmuş" → DOGRU: "Zeytinyağı", "Tel Şehriye", "Krema"
+  - "Taze" oneki: "Taze maydanoz", "Taze zencefil", "Taze fesleğen" → DOGRU: "Maydanoz", "Zencefil", "Fesleğen" (ISTISNA: "Taze fasulye" farkli bir sebzedir, aynen kalir)
 - ONEMLI: Eger yapilis adimlarinda gecen ama malzeme listesinde olmayan malzemeler varsa (ornegin "tuz", "karabiber", "su", "zeytinyagi" gibi), bunlari da "ingredients" listesine miktar belirtmeden ekle (amount: "").  base_ingredients'a da ekle.
 - Kalorileri ve makrolari malzemelere ve miktarlara gore tahmin et (kesin olmasi gerekmez)
 - cuisine: Tarifin mutfak turunu belirle. Degerler: "italian", "chinese", "mexican", "indian", "thai", "french", "japanese", "mediterranean", "turkish", "other"
@@ -358,7 +369,10 @@ SADECE aşağıdaki JSON formatında yanıt ver (başka hiçbir şey yazma):
 
 Önemli:
 - Her gün için öğün sayısı ${input.meals_per_day} olmalı
-- shopping_list tüm plan için toplu alışveriş listesi olmalı. SADECE malzeme adı yaz, miktar veya ölçü birimi EKLEME. Örnek: "Tavuk Göğsü", "Pirinç", "Soğan" — YANLIŞ: "1 kg tavuk göğsü", "2 adet soğan", "200g pirinç". İlk harf büyük, Türkçe karakterler kullan.
+- shopping_list tüm plan için toplu alışveriş listesi olmalı. SADECE KÖK malzeme adı yaz. İlk harf büyük, Türkçe karakterler kullan.
+  DOĞRU: "Tavuk Göğsü", "Pirinç", "Soğan", "Zeytinyağı", "Krema"
+  YANLIŞ: "1 kg tavuk göğsü", "Büyük soğan", "Rendelenmiş havuç", "Organik yumurta", "Taze maydanoz", "Sıcak su", "Şişe zeytinyağı", "Zeytinyağı veya tereyağı"
+  Miktar, boyut, hazırlanış, ambalaj, organik/light, sıcaklık, alternatif YAZMA. Sadece malzemenin kök adı.
 - calories her öğün için tahmini kalori (birden fazla tarif varsa toplam)
 - avg_calories_per_day günlük ortalama kalori`;
 

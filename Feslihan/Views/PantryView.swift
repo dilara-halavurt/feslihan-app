@@ -7,6 +7,7 @@ struct PantryView: View {
     @State private var items: [PantryItemDTO] = []
     @State private var isLoading = true
     @State private var showBubbleGame = false
+    @State private var showIngredientPicker = false
     @State private var searchText = ""
 
     private var filteredItems: [PantryItemDTO] {
@@ -41,8 +42,18 @@ struct PantryView: View {
 
                     Spacer()
 
-                    Button {
-                        showBubbleGame = true
+                    Menu {
+                        Button {
+                            showBubbleGame = true
+                        } label: {
+                            Label("Baloncuklardan Seç", systemImage: "circle.grid.3x3.fill")
+                        }
+
+                        Button {
+                            showIngredientPicker = true
+                        } label: {
+                            Label("Listeden Seç", systemImage: "list.bullet")
+                        }
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 16, weight: .semibold))
@@ -123,6 +134,14 @@ struct PantryView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showIngredientPicker) {
+            IngredientPickerSheet(
+                existingNames: Set(items.map { $0.ingredient_name }),
+                onSave: { names in
+                    Task { await addItems(names: names) }
+                }
+            )
         }
         .fullScreenCover(isPresented: $showBubbleGame) {
             PantryBubbleSheet(
@@ -286,6 +305,133 @@ struct PantryGateView: View {
     }
 }
 
+// MARK: - Ingredient Picker Sheet
+
+struct IngredientPickerSheet: View {
+    let existingNames: Set<String>
+    let onSave: ([String]) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var allIngredients: [String] = []
+    @State private var selected: Set<String> = []
+    @State private var searchText = ""
+    @State private var isLoading = true
+    @FocusState private var isSearchFocused: Bool
+
+    private var filteredIngredients: [String] {
+        let available = allIngredients.filter { !existingNames.contains($0) }
+        if searchText.isEmpty { return available }
+        return available.filter { $0.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                DS.cream.ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    // Search bar
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(DS.smoke)
+                            .font(.system(size: 14))
+
+                        TextField("Malzeme ara...", text: $searchText)
+                            .font(.bodyText())
+                            .focused($isSearchFocused)
+                    }
+                    .padding(12)
+                    .background(DS.sand)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+
+                    if isLoading {
+                        Spacer()
+                        ProgressView()
+                            .tint(DS.ember)
+                        Spacer()
+                    } else if filteredIngredients.isEmpty {
+                        Spacer()
+                        Text("Sonuç bulunamadı")
+                            .font(.bodyText())
+                            .foregroundStyle(DS.smoke)
+                        Spacer()
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 6) {
+                                ForEach(filteredIngredients, id: \.self) { name in
+                                    let isSelected = selected.contains(name)
+                                    Button {
+                                        withAnimation(.spring(response: 0.2)) {
+                                            if isSelected {
+                                                selected.remove(name)
+                                            } else {
+                                                selected.insert(name)
+                                            }
+                                        }
+                                    } label: {
+                                        HStack(spacing: 12) {
+                                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                                .font(.system(size: 20))
+                                                .foregroundStyle(isSelected ? DS.ember : DS.dust)
+
+                                            Text(name)
+                                                .font(.sectionHeader())
+                                                .foregroundStyle(DS.ink)
+
+                                            Spacer()
+                                        }
+                                        .padding(12)
+                                        .background(isSelected ? DS.emberLight : DS.sand)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 24)
+                        }
+                    }
+
+                    // Bottom button
+                    Button {
+                        onSave(Array(selected))
+                        dismiss()
+                    } label: {
+                        Text("Ekle (\(selected.count))")
+                            .font(.buttonFont())
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .background(selected.isEmpty ? DS.dust : DS.ember)
+                            .foregroundStyle(DS.cream)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .disabled(selected.isEmpty)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                }
+            }
+            .navigationTitle("Malzeme Seç")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("İptal") { dismiss() }
+                        .foregroundStyle(DS.smoke)
+                }
+            }
+        }
+        .task {
+            let fetched = await APIService.fetchIngredients()
+            allIngredients = fetched.map { name in
+                guard let first = name.name.first else { return name.name }
+                return first.uppercased() + name.name.dropFirst()
+            }.sorted()
+            isLoading = false
+            isSearchFocused = true
+        }
+    }
+}
+
 // MARK: - Bubble Game Sheet for Pantry
 
 struct PantryBubbleSheet: View {
@@ -299,7 +445,7 @@ struct PantryBubbleSheet: View {
         ZStack {
             DS.cream.ignoresSafeArea()
 
-            BubbleGameView(selected: $selected, onDone: {
+            BubbleGameView(selected: $selected, excludedNames: existingNames, onDone: {
                 let names = Array(selected)
                 onSave(names)
                 dismiss()
