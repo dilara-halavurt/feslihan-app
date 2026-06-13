@@ -1947,7 +1947,7 @@ app.post("/recipes/scrape-web", async (req, res) => {
     const ingredientSectionMatch = html.match(
       /Malzemeler<\/h2>([\s\S]*?)<h2[^>]*>.*?Nasıl Yapılır/i
     );
-    const ingredientsWithMeasures: { name: string; amount: string }[] = [];
+    const ingredientsWithMeasures: { name: string; amount: string; ingredient_id: string }[] = [];
     const baseIngredients: string[] = [];
     if (ingredientSectionMatch) {
       const ingSection = ingredientSectionMatch[1];
@@ -1955,10 +1955,16 @@ app.post("/recipes/scrape-web", async (req, res) => {
       let match;
       while ((match = liRegex.exec(ingSection)) !== null) {
         const raw = decodeHTMLEntities(match[1].trim());
-        // Try to separate amount from name: "4 su bardağı un" -> amount: "4 su bardağı", name: "un"
         const parts = parseIngredientLine(raw);
-        ingredientsWithMeasures.push(parts);
-        baseIngredients.push(parts.name.toLowerCase());
+        ingredientsWithMeasures.push({ ...parts, ingredient_id: "" });
+        baseIngredients.push(parts.name.toLocaleLowerCase("tr-TR"));
+      }
+
+      // Resolve ingredient IDs
+      const nameToId = await resolveIngredientMap(ingredientsWithMeasures.map((i) => i.name));
+      for (const ing of ingredientsWithMeasures) {
+        const fixed = fixTurkish(ing.name);
+        ing.ingredient_id = nameToId.get(fixed) ?? "";
       }
     }
 
@@ -2075,26 +2081,35 @@ function decodeHTMLEntities(str: string): string {
 }
 
 function parseIngredientLine(raw: string): { name: string; amount: string } {
-  // Patterns: "4 su bardağı un", "1 adet yumurta", "400 g kıyma", "Sarımsaklı yoğurt"
+  // Patterns: "4 su bardağı un", "1 adet yumurta", "400 gr kıyma", "Sarımsaklı yoğurt"
   const amountMatch = raw.match(
-    /^([\d½¼¾⅓⅔.,/]+\s*(?:su bardağı|çay bardağı|yemek kaşığı|tatlı kaşığı|çay kaşığı|adet|kg|g|ml|lt|litre|paket|demet|diş|dal|dilim|avuç|tutam|bardak|fincan|kaşık|porsiyon|büyük|küçük|orta boy|orta)\s*)/i
+    /^([\d½¼¾⅓⅔.,/]+\s*(?:su bardağı|çay bardağı|yemek kaşığı|tatlı kaşığı|çay kaşığı|adet|kg|gr|g|ml|lt|litre|paket|demet|diş|dal|dilim|avuç|tutam|bardak|fincan|kaşık|porsiyon|büyük|küçük|orta boy|orta)\s*)/i
   );
   if (amountMatch) {
     return {
       amount: amountMatch[1].trim(),
-      name: raw.slice(amountMatch[0].length).trim(),
+      name: cleanIngredientName(raw.slice(amountMatch[0].length).trim()),
     };
   }
-  // Simple number prefix: "2 adet soğan" already caught, try just number
+  // Simple number prefix: "2 soğan"
   const simpleMatch = raw.match(/^([\d½¼¾⅓⅔.,/]+\s*)/);
   if (simpleMatch && raw.length > simpleMatch[0].length) {
     return {
       amount: simpleMatch[1].trim(),
-      name: raw.slice(simpleMatch[0].length).trim(),
+      name: cleanIngredientName(raw.slice(simpleMatch[0].length).trim()),
     };
   }
   // No amount (e.g. "Sarımsaklı yoğurt", "Kuru nane")
-  return { amount: "", name: raw };
+  return { amount: "", name: cleanIngredientName(raw) };
+}
+
+function cleanIngredientName(name: string): string {
+  // Remove parenthetical notes: "nişasta ( yarım çay bardağı suda çözdürülmüş)" → "nişasta"
+  let cleaned = name.replace(/\s*\([^)]*\)\s*/g, "").trim();
+  // Collapse double spaces
+  cleaned = cleaned.replace(/\s{2,}/g, " ");
+  // Apply Turkish fixes and capitalize
+  return fixTurkish(cleaned);
 }
 
 // Analyze recipe from video content

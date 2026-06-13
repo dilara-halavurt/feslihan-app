@@ -564,6 +564,7 @@ struct ShoppingItemDTO: Codable, Identifiable {
 struct ScrapedRecipeIngredient: Codable {
     let name: String
     let amount: String
+    let ingredient_id: String?
 }
 
 struct ScrapedRecipe: Codable {

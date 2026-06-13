@@ -477,7 +477,11 @@ struct AddRecipeView: View {
             caption: nil,
             title: scraped.title,
             description: scraped.instructions,
-            ingredients_with_measures: scraped.ingredients.map { ["name": $0.name, "amount": $0.amount] },
+            ingredients_with_measures: scraped.ingredients.map {
+                var dict = ["name": $0.name, "amount": $0.amount]
+                if let ingId = $0.ingredient_id, !ingId.isEmpty { dict["ingredient_id"] = ingId }
+                return dict
+            },
             ingredients_without_measures: scraped.base_ingredients,
             servings: scraped.servings,
             calories_total_kcal: scraped.calories_total_kcal,
