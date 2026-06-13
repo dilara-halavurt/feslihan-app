@@ -1621,6 +1621,29 @@ app.get("/users/:userId/reviews", async (req, res) => {
   res.json(toSnake(result));
 });
 
+// Delete a review
+app.delete("/reviews/:reviewId", async (req, res) => {
+  const { user_id } = req.query;
+  if (!user_id) {
+    res.status(400).json({ error: "user_id query param required" });
+    return;
+  }
+  const result = await db
+    .delete(recipeReviews)
+    .where(
+      and(
+        eq(recipeReviews.id, req.params.reviewId),
+        eq(recipeReviews.userId, user_id as string)
+      )
+    )
+    .returning();
+  if (result.length === 0) {
+    res.status(404).json({ error: "Review not found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
 // ── Pantry ──────────────────────────────────────────────────────────────
 
 app.get("/users/:userId/pantry", async (req, res) => {
@@ -2204,6 +2227,30 @@ app.post("/admin/share-recipes", async (req, res) => {
     source_user: source_user_id,
     recipes_count: recipeIds.length,
     target_users_count: targetUsers.length,
+    mappings_created: created,
+  });
+});
+
+// Map ALL recipes to ALL users
+app.post("/admin/map-all-recipes", async (_req, res) => {
+  const allRecipes = await db.select({ id: recipes.id }).from(recipes);
+  const allUsers = await db.select({ clerkId: users.clerkId }).from(users);
+
+  let created = 0;
+  for (const user of allUsers) {
+    for (const recipe of allRecipes) {
+      await db
+        .insert(userRecipes)
+        .values({ userId: user.clerkId, recipeId: recipe.id })
+        .onConflictDoNothing();
+      created++;
+    }
+  }
+
+  console.log(`[Admin] Mapped ${allRecipes.length} recipes to ${allUsers.length} users (${created} mappings)`);
+  res.json({
+    recipes_count: allRecipes.length,
+    users_count: allUsers.length,
     mappings_created: created,
   });
 });
