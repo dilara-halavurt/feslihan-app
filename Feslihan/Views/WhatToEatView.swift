@@ -11,9 +11,10 @@ struct WhatToEatView: View {
     @State private var selectedTime: CookingTime = .medium
     @State private var selectedCuisine: CuisineType = .any
     @State private var selectedCategory: MealCategory = .any
+    @State private var selectedFlex: IngredientFlex = .pantryOnly
 
     enum WhatToEatStep {
-        case time, cuisine, category, results
+        case time, cuisine, category, ingredientFlex, results
     }
 
     var body: some View {
@@ -40,6 +41,14 @@ struct WhatToEatView: View {
             case .category:
                 CategorySelectionView(selectedCategory: $selectedCategory) {
                     withAnimation(.spring(response: 0.2)) {
+                        step = .ingredientFlex
+                    }
+                }
+                .transition(.move(edge: .trailing))
+
+            case .ingredientFlex:
+                IngredientFlexView(selectedFlex: $selectedFlex) {
+                    withAnimation(.spring(response: 0.2)) {
                         step = .results
                     }
                 }
@@ -50,7 +59,8 @@ struct WhatToEatView: View {
                     ingredients: pantryIngredients,
                     time: selectedTime,
                     cuisine: selectedCuisine,
-                    category: selectedCategory
+                    category: selectedCategory,
+                    flex: selectedFlex
                 )
                 .transition(.move(edge: .trailing))
             }
@@ -144,6 +154,126 @@ enum MealCategory: String, CaseIterable {
         }
     }
 }
+
+// MARK: - Ingredient Flexibility
+
+enum IngredientFlex: String, CaseIterable {
+    case pantryOnly = "Sadece evimdeki malzemelerle"
+    case allowFew = "Ufak tefek eksikleri söylerim"
+    case noLimit = "Malzemeleri düşünme"
+
+    var icon: String {
+        switch self {
+        case .pantryOnly: return "refrigerator.fill"
+        case .allowFew: return "bag.badge.plus"
+        case .noLimit: return "sparkles"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .pantryOnly: return "Sadece elindekilerle yapılabilecek tarifler"
+        case .allowFew: return "1-2 eksik malzeme olabilir"
+        case .noLimit: return "Tüm tariflere bak, malzeme fark etmez"
+        }
+    }
+}
+
+struct IngredientFlexView: View {
+    @Binding var selectedFlex: IngredientFlex
+    var onDone: () -> Void
+
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(spacing: 32) {
+            Spacer()
+
+            VStack(spacing: 8) {
+                Image(systemName: "basket.fill")
+                    .font(.system(size: 36, weight: .medium))
+                    .foregroundStyle(DS.ember)
+
+                Text("Malzeme durumun nasıl?")
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
+                    .foregroundStyle(DS.ink)
+            }
+
+            VStack(spacing: 11) {
+                ForEach(Array(IngredientFlex.allCases.enumerated()), id: \.element) { index, flex in
+                    Button {
+                        selectedFlex = flex
+                    } label: {
+                        HStack(spacing: 13) {
+                            Image(systemName: flex.icon)
+                                .font(.system(size: 20, weight: .medium))
+                                .foregroundStyle(DS.ember)
+                                .frame(width: 42, height: 42)
+                                .background(selectedFlex == flex ? DS.flour : DS.sand)
+                                .clipShape(RoundedRectangle(cornerRadius: 11))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(flex.rawValue)
+                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(DS.ink)
+
+                                Text(flex.subtitle)
+                                    .font(.system(size: 12, weight: .regular))
+                                    .foregroundStyle(DS.smoke)
+                            }
+
+                            Spacer()
+
+                            Circle()
+                                .fill(selectedFlex == flex ? DS.ember : .clear)
+                                .frame(width: 24, height: 24)
+                                .overlay(
+                                    Circle().stroke(selectedFlex == flex ? .clear : DS.stone, lineWidth: 1.5)
+                                )
+                                .overlay(
+                                    selectedFlex == flex ?
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(DS.flour) : nil
+                                )
+                        }
+                        .padding(16)
+                        .background(selectedFlex == flex ? DS.emberLight : DS.flour)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(selectedFlex == flex ? DS.ember : DS.stone, lineWidth: 1.5)
+                        )
+                    }
+                    .offset(y: appeared ? 0 : 20)
+                    .opacity(appeared ? 1 : 0)
+                    .animation(
+                        .easeOut(duration: 0.2).delay(Double(index) * 0.05),
+                        value: appeared
+                    )
+                }
+            }
+            .padding(.horizontal, 20)
+
+            Spacer()
+
+            Button(action: onDone) {
+                Text("Devam Et")
+                    .font(.buttonFont())
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(DS.ember)
+                    .foregroundStyle(DS.cream)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 24)
+        }
+        .onAppear { appeared = true }
+    }
+}
+
+// MARK: - Meal Category Selection
 
 struct CategorySelectionView: View {
     @Binding var selectedCategory: MealCategory
@@ -371,13 +501,15 @@ struct BubbleGameView: View {
     @State private var queue: [String] = []
     @State private var screenSize: CGSize = .zero
     @State private var isPaused = false
+    @State private var pressStart: Date?
+    @State private var pauseTimer: DispatchWorkItem?
 
     private let maxOnScreen = 12
 
     private func bubbleY(for bubble: Bubble, now: Date) -> CGFloat {
         let totalDistance = screenSize.height + bubble.size * 2
         let elapsedTime = isPaused ? bubble.elapsed : bubble.elapsed + now.timeIntervalSince(bubble.startTime)
-        let progress = min(elapsedTime / bubble.speed, 1.0)
+        let progress = elapsedTime / bubble.speed
         return -bubble.size + totalDistance * progress
     }
 
@@ -460,7 +592,7 @@ struct BubbleGameView: View {
                     Spacer()
                 } else {
                     GeometryReader { geo in
-                        TimelineView(.animation(paused: isPaused)) { timeline in
+                        TimelineView(.animation) { timeline in
                             let now = timeline.date
                             ZStack {
                                 ForEach(bubbles) { bubble in
@@ -475,9 +607,7 @@ struct BubbleGameView: View {
                                         x: bubble.x * geo.size.width,
                                         y: bubbleY(for: bubble, now: now)
                                     )
-                                    .onTapGesture {
-                                        tapBubble(bubble, now: now)
-                                    }
+                                    .allowsHitTesting(false)
                                 }
                             }
                             .onChange(of: now) { _, newNow in
@@ -485,18 +615,39 @@ struct BubbleGameView: View {
                             }
                         }
                         .clipped()
-                        .simultaneousGesture(
-                            LongPressGesture(minimumDuration: 0.3)
-                                .sequenced(before: DragGesture(minimumDistance: 0))
-                                .onChanged { value in
-                                    switch value {
-                                    case .second(true, _):
-                                        if !isPaused { pauseGame() }
-                                    default:
-                                        break
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { _ in
+                                    if pressStart == nil {
+                                        pressStart = Date()
+                                        let timer = DispatchWorkItem {
+                                            if pressStart != nil, !isPaused {
+                                                pauseGame()
+                                            }
+                                        }
+                                        pauseTimer = timer
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: timer)
                                     }
                                 }
-                                .onEnded { _ in
+                                .onEnded { value in
+                                    pauseTimer?.cancel()
+                                    pauseTimer = nil
+
+                                    if !isPaused {
+                                        // Short press = tap, find bubble at location
+                                        let tap = value.startLocation
+                                        let now = Date()
+                                        if let bubble = bubbles.first(where: { b in
+                                            let bx = b.x * screenSize.width
+                                            let by = bubbleY(for: b, now: now)
+                                            return hypot(tap.x - bx, tap.y - by) < b.size / 2
+                                        }) {
+                                            tapBubble(bubble, now: now)
+                                        }
+                                    }
+
+                                    pressStart = nil
                                     if isPaused { resumeGame() }
                                 }
                         )
@@ -551,26 +702,20 @@ struct BubbleGameView: View {
     private func pauseGame() {
         isPaused = true
         let now = Date()
-        // Freeze elapsed time for each bubble
         for i in bubbles.indices {
             bubbles[i].elapsed += now.timeIntervalSince(bubbles[i].startTime)
         }
     }
 
     private func resumeGame() {
-        isPaused = false
         let now = Date()
-        // Reset start time so elapsed calculation works from now
         for i in bubbles.indices {
             bubbles[i].startTime = now
         }
+        isPaused = false
     }
 
     private func launchBubble(name: String) {
-        guard !isPaused else {
-            queue.insert(name, at: 0)
-            return
-        }
         let bubble = Bubble(
             name: name,
             x: CGFloat.random(in: 0.12...0.88),
@@ -824,6 +969,7 @@ struct SwipeResultsView: View {
     let time: CookingTime
     let cuisine: CuisineType
     let category: MealCategory
+    let flex: IngredientFlex
 
     @State private var recipes: [SuggestedRecipe] = []
     @State private var currentIndex = 0
@@ -868,6 +1014,24 @@ struct SwipeResultsView: View {
                         .font(.bodyText())
                         .foregroundStyle(DS.smoke)
                 }
+                Spacer()
+            } else if recipes.isEmpty {
+                Spacer()
+                VStack(spacing: 16) {
+                    Image(systemName: "leaf.fill")
+                        .font(.system(size: 44, weight: .medium))
+                        .foregroundStyle(DS.dust)
+
+                    Text("Uygun tarif bulunamadı")
+                        .font(.displayTitle())
+                        .foregroundStyle(DS.ink)
+
+                    Text("Kilerine daha fazla malzeme ekle\nya da tarif koleksiyonunu genişlet")
+                        .font(.bodyText())
+                        .foregroundStyle(DS.smoke)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 32)
                 Spacer()
             } else if currentIndex >= recipes.count {
                 Spacer()
@@ -999,10 +1163,19 @@ struct SwipeResultsView: View {
         ]
 
         let scored: [(dto: RecipeDTO, score: Int)] = all.compactMap { dto in
-            // Filter by ingredients — must have at least one match
             let recipeIngs = Set(dto.ingredients_without_measures.map { $0.lowercased() })
             let matchCount = recipeIngs.intersection(userIngredients).count
-            guard matchCount > 0 else { return nil }
+            let missingCount = recipeIngs.count - matchCount
+
+            // Filter by ingredient flexibility
+            switch flex {
+            case .pantryOnly:
+                guard missingCount == 0 else { return nil }
+            case .allowFew:
+                guard matchCount > 0, missingCount <= 2 else { return nil }
+            case .noLimit:
+                break
+            }
 
             // Filter by cuisine
             if cuisine != .any {
@@ -1064,10 +1237,6 @@ struct SwipeResultsView: View {
                 results.append(result)
             }
             return results.sorted { $0.0 < $1.0 }.map { $0.1 }
-        }
-
-        if recipes.isEmpty {
-            recipes = SuggestedRecipe.placeholders
         }
 
         isLoading = false
