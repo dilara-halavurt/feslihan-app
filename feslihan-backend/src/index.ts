@@ -723,6 +723,38 @@ app.post("/recipes/backfill", async (_req, res) => {
   res.json({ backfilled: updated, total: all.length });
 });
 
+// Backfill: fix ingredient names (capitalize, Turkish fixes) and add ingredient_id
+app.post("/recipes/backfill-ingredients", async (_req, res) => {
+  const all = await db.select().from(recipes);
+  let updated = 0;
+
+  for (const recipe of all) {
+    const ings = recipe.ingredientsWithMeasures as { name: string; amount: string; ingredient_id?: string }[] | null;
+    if (!ings || ings.length === 0) continue;
+
+    // Fix each ingredient name and resolve IDs
+    const fixedIngs = ings.map((ing) => ({
+      ...ing,
+      name: cleanIngredientName(ing.name),
+    }));
+
+    const nameToId = await resolveIngredientMap(fixedIngs.map((i) => i.name));
+    for (const ing of fixedIngs) {
+      const fixed = fixTurkish(ing.name);
+      ing.ingredient_id = nameToId.get(fixed) ?? "";
+    }
+
+    await db
+      .update(recipes)
+      .set({ ingredientsWithMeasures: fixedIngs })
+      .where(eq(recipes.id, recipe.id));
+    updated++;
+    console.log(`[Backfill-Ing] ${recipe.title}: ${fixedIngs.length} ingredients fixed`);
+  }
+
+  res.json({ updated, total: all.length });
+});
+
 // Backfill freezer_friendly for existing recipes using AI
 app.post("/recipes/backfill-freezer", async (_req, res) => {
   const all = await db.select().from(recipes);
