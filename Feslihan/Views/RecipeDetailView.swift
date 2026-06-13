@@ -45,6 +45,8 @@ struct RecipeDetailView: View {
                                     profileURL = "https://www.tiktok.com/@\(username)"
                                 case "x":
                                     profileURL = "https://x.com/\(username)"
+                                case "nefisyemektarifleri":
+                                    profileURL = "https://www.nefisyemektarifleri.com/u/\(username)/tarifler/"
                                 default:
                                     profileURL = "https://www.instagram.com/\(username)/"
                                 }
@@ -71,7 +73,7 @@ struct RecipeDetailView: View {
                                             .font(.system(size: 15, weight: .semibold))
                                             .foregroundStyle(DS.ink)
                                         if let platform = recipe.platform {
-                                            Text(platform == "tiktok" ? "TikTok" : platform == "x" ? "X" : "Instagram")
+                                            Text(platformDisplayName(platform))
                                                 .font(.system(size: 12, weight: .medium))
                                                 .foregroundStyle(DS.smoke)
                                         }
@@ -332,6 +334,15 @@ struct RecipeDetailView: View {
               let userId = Clerk.shared.user?.id else { return }
         let reviews = await APIService.fetchUserReviews(userId: userId)
         userReview = reviews.first(where: { $0.recipe_id == recipeId })
+    }
+
+    private func platformDisplayName(_ platform: String) -> String {
+        switch platform {
+        case "tiktok": return "TikTok"
+        case "x": return "X"
+        case "nefisyemektarifleri": return "Nefis Yemek Tarifleri"
+        default: return "Instagram"
+        }
     }
 
     private func formatMinutes(_ minutes: Int) -> String {

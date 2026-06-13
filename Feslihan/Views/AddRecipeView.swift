@@ -581,7 +581,21 @@ struct AddRecipeView: View {
             instructions: processed.instructions,
             sourceURL: urlText.isEmpty ? nil : urlText,
             thumbnailData: processed.thumbnailData,
-            cookingTimeMinutes: processed.cookingTimeMinutes
+            cookingTimeMinutes: processed.cookingTimeMinutes,
+            cuisine: processed.cuisine,
+            difficulty: processed.difficulty,
+            tags: processed.tags,
+            likesCount: processed.likesCount,
+            servings: processed.servings,
+            caloriesTotalKcal: processed.caloriesTotalKcal,
+            caloriesPerServingKcal: processed.caloriesPerServingKcal,
+            proteinGrams: processed.proteinGrams,
+            carbsGrams: processed.carbsGrams,
+            fatGrams: processed.fatGrams,
+            fiberGrams: processed.fiberGrams,
+            platformUser: processed.platformUser,
+            platform: detectPlatform(),
+            freezerFriendly: processed.freezerFriendly
         )
 
         modelContext.insert(recipe)
