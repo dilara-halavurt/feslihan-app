@@ -440,7 +440,7 @@ async function enrichRecipes(recipes: any[]): Promise<any[]> {
 }
 
 async function ensureCreator(username: string | null | undefined, platform: "instagram" | "tiktok" | "x" | "nefisyemektarifleri" | "other") {
-  if (!username || username === "unknown") return;
+  if (!username) return;
   const trimmed = username.trim().toLowerCase();
   if (!trimmed) return;
 
@@ -1986,7 +1986,15 @@ app.post("/recipes/scrape-web", async (req, res) => {
     // Parse author
     const authorMatch = html.match(/<a[^>]+class="[^"]*author[^"]*"[^>]*>([^<]+)<\/a>/i)
       ?? html.match(/<link[^>]+rel=["']author["'][^>]+href=["'][^"']*\/u\/([^/]+)\//i);
-    const platformUser = authorMatch ? decodeHTMLEntities(authorMatch[1].trim()) : null;
+    // For nefisyemektarifleri: extract username from post-author-section /u/username/ link
+    const nytAuthorMatch = !authorMatch
+      ? html.match(/<section[^>]+post-author-section[\s\S]*?\/u\/([^/]+)\//i)
+      : null;
+    const platformUser = authorMatch
+      ? decodeHTMLEntities(authorMatch[1].trim())
+      : nytAuthorMatch
+        ? decodeURIComponent(nytAuthorMatch[1].trim())
+        : null;
 
     // Parse tags from breadcrumb
     const tagMatches: string[] = [];
