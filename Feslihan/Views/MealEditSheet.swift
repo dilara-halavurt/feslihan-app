@@ -5,6 +5,7 @@ struct MealEditSheet: View {
     let userRecipes: [RecipeDTO]
     let recipeById: [String: RecipeDTO]
     let onSave: (MealPlanMeal) -> Void
+    let onDelete: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var mainRecipeId: String?
@@ -28,11 +29,12 @@ struct MealEditSheet: View {
 
     private var isNewMeal: Bool { meal.recipeIds.isEmpty }
 
-    init(meal: MealPlanMeal, userRecipes: [RecipeDTO], recipeById: [String: RecipeDTO] = [:], onSave: @escaping (MealPlanMeal) -> Void) {
+    init(meal: MealPlanMeal, userRecipes: [RecipeDTO], recipeById: [String: RecipeDTO] = [:], onSave: @escaping (MealPlanMeal) -> Void, onDelete: (() -> Void)? = nil) {
         self.meal = meal
         self.userRecipes = userRecipes
         self.recipeById = recipeById
         self.onSave = onSave
+        self.onDelete = onDelete
         _mainRecipeId = State(initialValue: meal.recipeIds.first)
         _sideRecipeIds = State(initialValue: Array(meal.recipeIds.dropFirst()))
         _mealType = State(initialValue: meal.mealType)
@@ -171,6 +173,26 @@ struct MealEditSheet: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
                         .disabled(!canSave)
+
+                        // Delete button (existing meals only)
+                        if !isNewMeal, let onDelete {
+                            Button {
+                                onDelete()
+                                dismiss()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 15))
+                                    Text("Öğünü Sil")
+                                        .font(.system(size: 16, weight: .semibold))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 50)
+                                .foregroundStyle(DS.tomato)
+                                .background(DS.sand)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                        }
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
