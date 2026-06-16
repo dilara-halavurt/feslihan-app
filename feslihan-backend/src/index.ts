@@ -232,22 +232,189 @@ const turkishWordMap: Record<string, string> = {
   incir: "incir",
 };
 
-function turkishCapitalize(str: string): string {
-  if (!str) return str;
-  const first = str[0];
-  if (first === "i") return "İ" + str.slice(1);
-  if (first === "ı") return "I" + str.slice(1);
-  return first.toLocaleUpperCase("tr-TR") + str.slice(1);
+function turkishCapitalizeWord(word: string): string {
+  if (!word) return word;
+  const first = word[0];
+  if (first === "i") return "İ" + word.slice(1);
+  if (first === "ı") return "I" + word.slice(1);
+  return first.toLocaleUpperCase("tr-TR") + word.slice(1);
 }
+
+// Words that should stay lowercase (connectors/prepositions)
+const LOWERCASE_WORDS = new Set(["veya", "ve", "için", "ile", "ya", "da"]);
 
 function fixTurkish(name: string): string {
-  const lower = name.toLocaleLowerCase("tr-TR").trim();
-  // Fix each word individually
-  const fixed = lower.split(/\s+/).map((w) => turkishWordMap[w] ?? w).join(" ");
-  return turkishCapitalize(fixed);
+  const lower = name.toLocaleLowerCase("tr-TR").replace(/\s{2,}/g, " ").trim();
+  // Fix each word: apply word map, then capitalize (except connectors)
+  const words = lower.split(/\s+/).map((w) => turkishWordMap[w] ?? w);
+  return words
+    .map((w, i) => (i > 0 && LOWERCASE_WORDS.has(w)) ? w : turkishCapitalizeWord(w))
+    .join(" ");
 }
 
-async function resolveIngredientMap(names: string[]): Promise<Map<string, string>> {
+// Bigram similarity (Dice coefficient) for fuzzy matching
+function bigrams(str: string): Set<string> {
+  const s = str.toLocaleLowerCase("tr-TR").trim();
+  const set = new Set<string>();
+  for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+  return set;
+}
+
+function diceCoefficient(a: string, b: string): number {
+  const biA = bigrams(a);
+  const biB = bigrams(b);
+  if (biA.size === 0 && biB.size === 0) return a.toLocaleLowerCase("tr-TR") === b.toLocaleLowerCase("tr-TR") ? 1 : 0;
+  let intersection = 0;
+  for (const bi of biA) if (biB.has(bi)) intersection++;
+  return (2 * intersection) / (biA.size + biB.size);
+}
+
+// Suffixes that fundamentally change the ingredient (X ≠ X yağı, X unu, etc.)
+const PRODUCT_FORM_SUFFIXES = [
+  " yağı", " yağ", " unu", " un", " suyu", " sosu", " sos",
+  " ezmesi", " püresi", " rendesi", " tozu", " toz",
+  " cipsi", " gevreği", " lapası", " sütü", " süt",
+  " peyniri", " peynir", " ekmeği", " ekmek",
+  " eti", " fileto",
+];
+
+// Suffixes that are just alternate names (safe to strip for matching)
+const COSMETIC_SUFFIXES = [
+  " içi", // ceviz içi = ceviz
+];
+
+// Prefixes that are qualifiers, not identity changers (safe to ignore for matching)
+const IGNORABLE_PREFIXES = [
+  "taze ", "kuru ", "organik ", "toz ", "çiğ ",
+  "büyük ", "küçük ", "orta ", "orta boy ",
+  "az yağlı ", "tam yağlı ", "yağsız ", "ekstra ",
+  "kavrulmuş ", "közlenmiş ", "haşlanmış ", "eritilmiş ",
+  "rendelenmiş ", "doğranmış ", "dilimlenmiş ", "süzme ",
+  "ince ", "iri ", "sade ", "light ",
+  "pul ", "tane ", "çekilmiş ", "öğütülmüş ",
+  "soğuk ", "ılık ", "sıcak ",
+  "koyu ", "açık ",
+];
+
+function getProductForm(name: string): string | null {
+  const lower = name.toLocaleLowerCase("tr-TR").trim();
+  for (const suffix of PRODUCT_FORM_SUFFIXES) {
+    if (lower.endsWith(suffix)) return suffix.trim();
+  }
+  return null;
+}
+
+function stripPrefixes(name: string): string {
+  let s = name.toLocaleLowerCase("tr-TR").trim();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const prefix of IGNORABLE_PREFIXES) {
+      if (s.startsWith(prefix)) {
+        s = s.slice(prefix.length);
+        changed = true;
+      }
+    }
+  }
+  return s;
+}
+
+function normalizeForMatch(name: string): string {
+  let s = stripPrefixes(name);
+  for (const suffix of COSMETIC_SUFFIXES) {
+    if (s.endsWith(suffix)) { s = s.slice(0, -suffix.length).trim(); break; }
+  }
+  return s;
+}
+
+function findBestMatch(
+  name: string,
+  allIngredients: { id: string; name: string }[]
+): { id: string; name: string } | null {
+  const lowerA = name.toLocaleLowerCase("tr-TR").trim();
+  const normA = normalizeForMatch(name);
+  const formA = getProductForm(name);
+
+  let bestScore = 0;
+  let bestMatch: { id: string; name: string } | null = null;
+
+  for (const existing of allIngredients) {
+    const lowerB = existing.name.toLocaleLowerCase("tr-TR").trim();
+    const normB = normalizeForMatch(existing.name);
+    const formB = getProductForm(existing.name);
+
+    // If product forms differ, never merge (e.g. "Susam" vs "Susam yağı")
+    if (formA !== formB) continue;
+
+    // Exact normalized match (after stripping prefixes + cosmetic suffixes)
+    if (normA === normB) return existing;
+
+    // Bigram similarity on normalized forms (high threshold)
+    const dice = diceCoefficient(normA, normB);
+    if (dice > 0.8 && dice > bestScore) {
+      bestScore = dice;
+      bestMatch = existing;
+    }
+  }
+
+  return bestMatch;
+}
+
+// Cached ingredient list — refreshed per request batch
+let _cachedIngredients: { id: string; name: string }[] | null = null;
+let _cacheTime = 0;
+
+async function getAllIngredients(): Promise<{ id: string; name: string }[]> {
+  const now = Date.now();
+  if (_cachedIngredients && now - _cacheTime < 10_000) return _cachedIngredients;
+  _cachedIngredients = await db.select({ id: ingredients.id, name: ingredients.name }).from(ingredients);
+  _cacheTime = now;
+  return _cachedIngredients;
+}
+
+function invalidateIngredientCache() {
+  _cachedIngredients = null;
+}
+
+// Classify ingredients missing price_tier/availability — runs in background, non-blocking
+async function classifyNewIngredients(ids: string[]) {
+  if (ids.length === 0) return;
+  try {
+    const rows = await db
+      .select({ id: ingredients.id, name: ingredients.name, priceTier: ingredients.priceTier, availability: ingredients.availability })
+      .from(ingredients)
+      .where(inArray(ingredients.id, ids));
+
+    const unclassified = rows.filter((r) => !r.priceTier || !r.availability);
+    if (unclassified.length === 0) return;
+
+    const names = unclassified.map((r) => r.name);
+    console.log(`[Classify] Auto-classifying ${names.length} ingredients: ${names.join(", ")}`);
+
+    const results = await classifyIngredients(names);
+    for (const item of results) {
+      const match = unclassified.find((r) => r.name.toLocaleLowerCase("tr-TR") === item.name.toLocaleLowerCase("tr-TR"));
+      if (!match) continue;
+
+      const updates: Record<string, string> = {};
+      if (!match.priceTier && ["cheap", "neutral", "expensive"].includes(item.price_tier)) {
+        updates.priceTier = item.price_tier;
+      }
+      if (!match.availability && ["easy", "neutral", "rare"].includes(item.availability)) {
+        updates.availability = item.availability;
+      }
+      if (Object.keys(updates).length > 0) {
+        await db.update(ingredients).set(updates).where(eq(ingredients.id, match.id));
+      }
+    }
+    console.log(`[Classify] Done classifying ${unclassified.length} ingredients`);
+  } catch (err: any) {
+    console.error("[Classify] Auto-classify failed (non-blocking):", err.message || err);
+  }
+}
+
+// Resolve ingredient names to IDs — exact + fuzzy match only, never creates new rows
+async function lookupIngredientMap(names: string[]): Promise<Map<string, string>> {
   const nameToId = new Map<string, string>();
   if (!names || names.length === 0) return nameToId;
 
@@ -255,25 +422,55 @@ async function resolveIngredientMap(names: string[]): Promise<Map<string, string
   if (normalized.length === 0) return nameToId;
 
   const unique = [...new Set(normalized)];
+
+  // Step 1: Try exact match
   const existing = await db
     .select({ id: ingredients.id, name: ingredients.name })
     .from(ingredients)
     .where(inArray(ingredients.name, unique));
 
   for (const r of existing) nameToId.set(r.name, r.id);
-  const newNames = unique.filter((n) => !nameToId.has(n));
+  const unmatched = unique.filter((n) => !nameToId.has(n));
 
-  if (newNames.length > 0) {
+  // Step 2: Fuzzy match against all existing ingredients
+  if (unmatched.length > 0) {
+    const allIngs = await getAllIngredients();
+    for (const name of unmatched) {
+      const match = findBestMatch(name, allIngs);
+      if (match) {
+        nameToId.set(name, match.id);
+        console.log(`[Ingredient] Fuzzy matched "${name}" → "${match.name}"`);
+      }
+    }
+  }
+
+  return nameToId;
+}
+
+// Resolve ingredient names to IDs — creates new rows for truly unknown ingredients
+async function resolveIngredientMap(names: string[]): Promise<Map<string, string>> {
+  const nameToId = await lookupIngredientMap(names);
+
+  const normalized = names.map((n) => fixTurkish(n)).filter(Boolean);
+  const unique = [...new Set(normalized)];
+  const stillNew = unique.filter((n) => !nameToId.has(n));
+
+  if (stillNew.length > 0) {
     const inserted = await db
       .insert(ingredients)
-      .values(newNames.map((name) => ({ name })))
+      .values(stillNew.map((name) => ({ name })))
       .onConflictDoNothing()
       .returning();
     for (const row of inserted) {
       nameToId.set(row.name, row.id);
     }
-    console.log(`Registered ${newNames.length} new ingredient(s): ${newNames.join(", ")}`);
+    invalidateIngredientCache();
+    console.log(`[Ingredient] Created ${stillNew.length} new: ${stillNew.join(", ")}`);
   }
+
+  // Classify any unclassified ingredients in background (don't block response)
+  const allResolvedIds = [...nameToId.values()];
+  classifyNewIngredients(allResolvedIds).catch(() => {});
 
   return nameToId;
 }
@@ -576,6 +773,22 @@ app.post("/recipes", async (req, res) => {
   const creatorUsername = data.platform_user || meta.platformUser || extractUserFromURL(data.url) || "unknown";
   await ensureCreator(creatorUsername, data.platform);
 
+  // Resolve ingredient IDs for ingredients_with_measures
+  const ingWithMeasures: { name: string; amount: string; section?: string; ingredient_id: string }[] = (data.ingredients_with_measures ?? []).map(
+    (i: any) => ({
+      name: fixTurkish((i.name ?? "").replace(/\s{2,}/g, " ").trim()),
+      amount: (i.amount ?? "").replace(/\s{2,}/g, " ").trim(),
+      ...(i.section ? { section: i.section } : {}),
+      ingredient_id: "",
+    })
+  );
+  if (ingWithMeasures.length > 0) {
+    const nameToId = await resolveIngredientMap(ingWithMeasures.map((i) => i.name));
+    for (const ing of ingWithMeasures) {
+      ing.ingredient_id = nameToId.get(ing.name) ?? nameToId.get(fixTurkish(ing.name)) ?? "";
+    }
+  }
+
   const result = await db
     .insert(recipes)
     .values({
@@ -587,7 +800,7 @@ app.post("/recipes", async (req, res) => {
       caption: data.caption,
       title: data.title,
       description: data.description,
-      ingredientsWithMeasures: data.ingredients_with_measures ?? [],
+      ingredientsWithMeasures: ingWithMeasures,
       ingredientsWithoutMeasures: await resolveIngredientIds(data.ingredients_without_measures ?? []),
       thumbnailUrl,
       servings: data.servings,
@@ -904,13 +1117,101 @@ app.post("/ingredients/classify", async (_req, res) => {
   }
 });
 
-// Consolidate ingredients: capitalize first letter with proper Turkish characters, merge duplicates
-app.post("/ingredients/consolidate", async (_req, res) => {
+// Helper: merge duplicate ingredient rows into a single "keep" row, updating all references
+async function mergeIngredientRows(
+  keep: { id: string; name: string; priceTier: string | null; availability: string | null; pricePerUnit: number | null },
+  dupes: { id: string; name: string }[],
+  canonicalName: string
+) {
+  const dupeIds = dupes.map((d) => d.id);
+
+  // Update references in userPantry — delete rows where user already has the keep ingredient, update the rest
+  for (const dupeId of dupeIds) {
+    await db.execute(sql`
+      DELETE FROM user_pantry
+      WHERE ingredient_id = ${dupeId}::uuid
+        AND user_id IN (
+          SELECT user_id FROM user_pantry WHERE ingredient_id = ${keep.id}::uuid
+        )
+    `);
+  }
+  await db.update(userPantry)
+    .set({ ingredientId: keep.id })
+    .where(inArray(userPantry.ingredientId, dupeIds));
+
+  // Update references in userShoppingList — same dedup logic
+  for (const dupeId of dupeIds) {
+    await db.execute(sql`
+      DELETE FROM user_shopping_list
+      WHERE ingredient_id = ${dupeId}::uuid
+        AND user_id IN (
+          SELECT user_id FROM user_shopping_list WHERE ingredient_id = ${keep.id}::uuid
+        )
+    `);
+  }
+  await db.update(userShoppingList)
+    .set({ ingredientId: keep.id })
+    .where(inArray(userShoppingList.ingredientId, dupeIds));
+
+  // Update jsonb arrays in recipes.ingredients_without_measures and ingredientsWithMeasures
+  for (const dupe of dupes) {
+    // ingredients_without_measures: array of ID strings
+    await db.execute(sql`
+      UPDATE recipes
+      SET ingredients_without_measures = (
+        SELECT jsonb_agg(
+          CASE WHEN elem = ${dupe.id}::text THEN ${keep.id}::text ELSE elem END
+        )
+        FROM jsonb_array_elements_text(ingredients_without_measures) AS elem
+      )
+      WHERE ingredients_without_measures::text LIKE ${"%" + dupe.id + "%"}
+    `);
+
+    // ingredients_with_measures: array of objects with ingredient_id field
+    await db.execute(sql`
+      UPDATE recipes
+      SET ingredients_with_measures = (
+        SELECT jsonb_agg(
+          CASE
+            WHEN elem->>'ingredient_id' = ${dupe.id} THEN jsonb_set(elem, '{ingredient_id}', to_jsonb(${keep.id}::text))
+            ELSE elem
+          END
+        )
+        FROM jsonb_array_elements(ingredients_with_measures) AS elem
+      )
+      WHERE ingredients_with_measures::text LIKE ${"%" + dupe.id + "%"}
+    `);
+
+    // meal_plans.shopping_ingredient_ids: array of ID strings
+    await db.execute(sql`
+      UPDATE meal_plans
+      SET shopping_ingredient_ids = (
+        SELECT jsonb_agg(
+          CASE WHEN elem = ${dupe.id}::text THEN ${keep.id}::text ELSE elem END
+        )
+        FROM jsonb_array_elements_text(shopping_ingredient_ids) AS elem
+      )
+      WHERE shopping_ingredient_ids::text LIKE ${"%" + dupe.id + "%"}
+    `);
+  }
+
+  // Delete duplicates
+  await db.delete(ingredients).where(inArray(ingredients.id, dupeIds));
+
+  // Rename the kept one if needed
+  if (keep.name !== canonicalName) {
+    await db.update(ingredients).set({ name: canonicalName }).where(eq(ingredients.id, keep.id));
+  }
+}
+
+// Consolidate ingredients: exact + fuzzy dedup
+app.post("/ingredients/consolidate", async (req, res) => {
+  const dryRun = req.query.dry_run === "true";
   try {
     const all = await db.select().from(ingredients).orderBy(ingredients.name);
-    console.log(`[Consolidate] Processing ${all.length} ingredients...`);
+    console.log(`[Consolidate] Processing ${all.length} ingredients (dry_run=${dryRun})...`);
 
-    // Group by normalized (capitalized Turkish) name
+    // Phase 1: Group by exact match after fixTurkish normalization
     const groups = new Map<string, typeof all>();
     for (const row of all) {
       const canonical = fixTurkish(row.name);
@@ -919,18 +1220,16 @@ app.post("/ingredients/consolidate", async (_req, res) => {
     }
 
     let renamed = 0;
-    let merged = 0;
+    let exactMerged = 0;
 
     for (const [canonical, rows] of groups) {
       if (rows.length === 1) {
-        // Just rename if needed
         if (rows[0].name !== canonical) {
-          await db.update(ingredients).set({ name: canonical }).where(eq(ingredients.id, rows[0].id));
+          if (!dryRun) await db.update(ingredients).set({ name: canonical }).where(eq(ingredients.id, rows[0].id));
           console.log(`  Renamed: "${rows[0].name}" -> "${canonical}"`);
           renamed++;
         }
       } else {
-        // Merge duplicates: keep the first one (prefer one with classification data)
         const sorted = rows.sort((a, b) => {
           const aScore = (a.priceTier ? 1 : 0) + (a.availability ? 1 : 0) + (a.pricePerUnit ? 1 : 0);
           const bScore = (b.priceTier ? 1 : 0) + (b.availability ? 1 : 0) + (b.pricePerUnit ? 1 : 0);
@@ -938,48 +1237,82 @@ app.post("/ingredients/consolidate", async (_req, res) => {
         });
         const keep = sorted[0];
         const dupes = sorted.slice(1);
-        const dupeIds = dupes.map((d) => d.id);
 
-        // Update references in userPantry
-        await db.update(userPantry)
-          .set({ ingredientId: keep.id })
-          .where(inArray(userPantry.ingredientId, dupeIds));
-
-        // Update references in userShoppingList
-        await db.update(userShoppingList)
-          .set({ ingredientId: keep.id })
-          .where(inArray(userShoppingList.ingredientId, dupeIds));
-
-        // Update jsonb arrays in recipes.ingredients_without_measures
-        for (const dupe of dupes) {
-          await db.execute(sql`
-            UPDATE recipes
-            SET ingredients_without_measures = (
-              SELECT jsonb_agg(
-                CASE WHEN elem = ${dupe.id}::text THEN ${keep.id}::text ELSE elem END
-              )
-              FROM jsonb_array_elements_text(ingredients_without_measures) AS elem
-            )
-            WHERE ingredients_without_measures::text LIKE ${"%" + dupe.id + "%"}
-          `);
-        }
-
-        // Delete duplicates
-        await db.delete(ingredients).where(inArray(ingredients.id, dupeIds));
-
-        // Rename the kept one
-        if (keep.name !== canonical) {
-          await db.update(ingredients).set({ name: canonical }).where(eq(ingredients.id, keep.id));
-        }
-
-        console.log(`  Merged: [${rows.map((r) => `"${r.name}"`).join(", ")}] -> "${canonical}" (kept ${keep.id})`);
-        merged += dupes.length;
-        renamed++;
+        console.log(`  Exact merge: [${rows.map((r) => `"${r.name}"`).join(", ")}] -> "${canonical}"`);
+        if (!dryRun) await mergeIngredientRows(keep, dupes, canonical);
+        exactMerged += dupes.length;
       }
     }
 
-    console.log(`[Consolidate] Done: ${renamed} renamed, ${merged} duplicates merged`);
-    res.json({ renamed, merged, total: all.length, remaining: groups.size });
+    // Phase 2: Fuzzy matching across remaining ingredients
+    const remaining = dryRun
+      ? all // in dry run, just show what would happen
+      : await db.select().from(ingredients).orderBy(ingredients.name);
+
+    // Build fuzzy groups: for each ingredient, find its best match among earlier ones
+    const fuzzyGroups = new Map<string, typeof remaining>(); // keepId -> [dupes]
+    const assigned = new Set<string>(); // IDs already assigned to a group
+
+    for (let i = 0; i < remaining.length; i++) {
+      if (assigned.has(remaining[i].id)) continue;
+
+      const candidates = remaining.slice(i + 1).filter((r) => !assigned.has(r.id));
+      const matches: typeof remaining = [];
+
+      for (const candidate of candidates) {
+        const match = findBestMatch(candidate.name, [remaining[i]]);
+        if (match) {
+          matches.push(candidate);
+        }
+      }
+
+      if (matches.length > 0) {
+        fuzzyGroups.set(remaining[i].id, matches);
+        assigned.add(remaining[i].id);
+        for (const m of matches) assigned.add(m.id);
+      }
+    }
+
+    let fuzzyMerged = 0;
+    const fuzzyLog: { keep: string; merged: string[] }[] = [];
+
+    for (const [keepId, dupes] of fuzzyGroups) {
+      const keepRow = remaining.find((r) => r.id === keepId)!;
+      const allInGroup = [keepRow, ...dupes];
+
+      // Pick the one with most classification data, then shortest name (most canonical)
+      const sorted = allInGroup.sort((a, b) => {
+        const aScore = (a.priceTier ? 1 : 0) + (a.availability ? 1 : 0) + (a.pricePerUnit ? 1 : 0);
+        const bScore = (b.priceTier ? 1 : 0) + (b.availability ? 1 : 0) + (b.pricePerUnit ? 1 : 0);
+        if (bScore !== aScore) return bScore - aScore;
+        return a.name.length - b.name.length; // prefer shorter (more canonical) name
+      });
+
+      const keep = sorted[0];
+      const toMerge = sorted.slice(1);
+      const canonical = fixTurkish(keep.name);
+
+      console.log(`  Fuzzy merge: [${allInGroup.map((r) => `"${r.name}"`).join(", ")}] -> "${canonical}"`);
+      fuzzyLog.push({ keep: canonical, merged: toMerge.map((d) => d.name) });
+
+      if (!dryRun) await mergeIngredientRows(keep, toMerge, canonical);
+      fuzzyMerged += toMerge.length;
+    }
+
+    if (!dryRun) invalidateIngredientCache();
+
+    const finalCount = dryRun ? all.length - exactMerged - fuzzyMerged : (await db.select({ id: ingredients.id }).from(ingredients)).length;
+
+    console.log(`[Consolidate] Done: ${renamed} renamed, ${exactMerged} exact-merged, ${fuzzyMerged} fuzzy-merged`);
+    res.json({
+      dry_run: dryRun,
+      renamed,
+      exact_merged: exactMerged,
+      fuzzy_merged: fuzzyMerged,
+      total_before: all.length,
+      total_after: finalCount,
+      fuzzy_matches: fuzzyLog,
+    });
   } catch (err: any) {
     console.error("[Consolidate]", err.message || err);
     res.status(500).json({ error: "Consolidation failed", detail: err.message });
@@ -1739,27 +2072,9 @@ app.post("/users/:userId/pantry", async (req, res) => {
     return res.status(400).json({ error: "ingredient_names required" });
   }
 
-  // Resolve names to IDs
-  const lowered = ingredient_names.map((n) => n.toLowerCase());
-  const found = await db
-    .select({ id: ingredients.id, name: ingredients.name })
-    .from(ingredients)
-    .where(inArray(ingredients.name, ingredient_names));
-
-  // Also try lowercase match, then strip parenthetical notes e.g. "Tereyağı(kalıp için)" -> "Tereyağı"
-  const foundNames = new Set(found.map((f) => f.name));
-  const missed = ingredient_names.filter((n) => !foundNames.has(n));
-  if (missed.length > 0) {
-    const allIngredients = await db.select({ id: ingredients.id, name: ingredients.name }).from(ingredients);
-    for (const m of missed) {
-      const stripped = m.replace(/\s*\(.*?\)\s*/g, "").trim();
-      const match = allIngredients.find((i) => i.name.toLowerCase() === m.toLowerCase())
-        ?? allIngredients.find((i) => i.name.toLowerCase() === stripped.toLowerCase());
-      if (match) found.push(match);
-    }
-  }
-
-  const ingredientIds = found.map((f) => f.id);
+  // Resolve names to IDs using fuzzy matching
+  const nameToId = await lookupIngredientMap(ingredient_names);
+  const ingredientIds = [...new Set(nameToId.values())];
   if (ingredientIds.length === 0) {
     return res.status(201).json({ added: 0 });
   }
@@ -1826,25 +2141,9 @@ app.post("/users/:userId/shopping-list", async (req, res) => {
     return res.status(400).json({ error: "ingredient_names required" });
   }
 
-  // Resolve names to IDs
-  const found = await db
-    .select({ id: ingredients.id, name: ingredients.name })
-    .from(ingredients)
-    .where(inArray(ingredients.name, ingredient_names));
-
-  const foundNames = new Set(found.map((f) => f.name));
-  const missed = ingredient_names.filter((n) => !foundNames.has(n));
-  if (missed.length > 0) {
-    const allIngredients = await db.select({ id: ingredients.id, name: ingredients.name }).from(ingredients);
-    for (const m of missed) {
-      const stripped = m.replace(/\s*\(.*?\)\s*/g, "").trim();
-      const match = allIngredients.find((i) => i.name.toLowerCase() === m.toLowerCase())
-        ?? allIngredients.find((i) => i.name.toLowerCase() === stripped.toLowerCase());
-      if (match) found.push(match);
-    }
-  }
-
-  const ingredientIds = found.map((f) => f.id);
+  // Resolve names to IDs using the same fuzzy logic as recipe saving
+  const nameToId = await lookupIngredientMap(ingredient_names);
+  const ingredientIds = [...new Set(nameToId.values())];
   if (ingredientIds.length === 0) {
     return res.status(201).json({ added: 0 });
   }
@@ -2115,7 +2414,14 @@ function cleanIngredientName(name: string): string {
 // Analyze recipe from video content
 app.post("/ai/analyze", async (req, res) => {
   try {
-    const result = await analyzeRecipe(req.body);
+    // Fetch existing ingredient names so Claude picks from them
+    const allIngs = await getAllIngredients();
+    const existingNames = allIngs.map((i) => i.name);
+
+    const result = await analyzeRecipe({
+      ...req.body,
+      existing_ingredients: existingNames,
+    });
     res.json(result);
   } catch (err: any) {
     console.error("[AI Analyze]", err.stack || err.message || err);
@@ -2391,6 +2697,130 @@ async function seedTags() {
 }
 
 const PORT = 3000;
+// Clean an ingredient name: strip alternatives, parentheticals, trailing qualifiers
+function cleanIngredientNameFull(raw: string): string {
+  let name = raw;
+  // Remove parenthetical notes: "Nişasta ( Yarım Çay Bardağı...)" → "Nişasta"
+  name = name.replace(/\s*\([^)]*\)\s*/g, "").trim();
+  // Split on " veya ", " ya da ", " / " — keep first part
+  name = name.split(/\s+veya\s+/i)[0];
+  name = name.split(/\s+ya\s+da\s+/i)[0];
+  name = name.split(/\s*\/\s*/)[0];
+  // Strip trailing comma-phrases: "Yeşil Biber, Doğranmış" → "Yeşil Biber"
+  name = name.split(",")[0];
+  // Collapse spaces and capitalize
+  return fixTurkish(name.trim());
+}
+
+// Fix ingredient names in all recipes: capitalize, fix Turkish chars, collapse spaces
+app.post("/admin/fix-ingredient-names", async (_req, res) => {
+  try {
+    const allRecipes = await db.select({ id: recipes.id, ingredientsWithMeasures: recipes.ingredientsWithMeasures }).from(recipes);
+    let fixed = 0;
+
+    for (const recipe of allRecipes) {
+      const ings = recipe.ingredientsWithMeasures as { name: string; amount: string; section?: string; ingredient_id?: string }[] ?? [];
+      if (ings.length === 0) continue;
+
+      let changed = false;
+      const updated = ings.map((ing) => {
+        const cleanName = fixTurkish((ing.name ?? "").replace(/\s{2,}/g, " ").trim());
+        const cleanAmount = (ing.amount ?? "").replace(/\s{2,}/g, " ").trim();
+        if (cleanName !== ing.name || cleanAmount !== ing.amount) changed = true;
+        return { ...ing, name: cleanName, amount: cleanAmount };
+      });
+
+      if (changed) {
+        await db.update(recipes).set({ ingredientsWithMeasures: updated }).where(eq(recipes.id, recipe.id));
+        fixed++;
+      }
+    }
+
+    // Also fix ingredient table names
+    const allIngs = await db.select().from(ingredients);
+    let ingFixed = 0;
+    for (const ing of allIngs) {
+      const clean = fixTurkish(ing.name);
+      if (clean !== ing.name) {
+        // Check if the clean name already exists
+        const existing = allIngs.find((other) => other.id !== ing.id && fixTurkish(other.name) === clean);
+        if (!existing) {
+          await db.update(ingredients).set({ name: clean }).where(eq(ingredients.id, ing.id));
+          ingFixed++;
+        }
+      }
+    }
+
+    console.log(`[Fix Names] Fixed ${fixed} recipes, ${ingFixed} ingredients`);
+    res.json({ recipes_fixed: fixed, ingredients_fixed: ingFixed, total_recipes: allRecipes.length });
+  } catch (err: any) {
+    console.error("[Fix Names]", err.message || err);
+    res.status(500).json({ error: "Failed", detail: err.message });
+  }
+});
+
+// Clean dirty ingredient names (veya, commas, slashes, parens) and merge into existing
+app.post("/admin/clean-ingredient-names", async (req, res) => {
+  const dryRun = req.query.dry_run === "true";
+  try {
+    const all = await db.select().from(ingredients).orderBy(ingredients.name);
+    const dirtyPattern = /veya|ya da|\/|,|\(/i;
+    const dirty = all.filter((r) => dirtyPattern.test(r.name));
+
+    const actions: { old: string; new: string; action: string }[] = [];
+
+    for (const row of dirty) {
+      const cleaned = cleanIngredientNameFull(row.name);
+      if (cleaned === row.name) continue;
+
+      // Check if the cleaned name already exists
+      const existing = all.find((other) => other.id !== row.id && fixTurkish(other.name) === cleaned);
+
+      if (existing) {
+        // Merge into existing
+        actions.push({ old: row.name, new: existing.name, action: "merge" });
+        if (!dryRun) {
+          await mergeIngredientRows(existing, [row], existing.name);
+        }
+      } else {
+        // Just rename
+        actions.push({ old: row.name, new: cleaned, action: "rename" });
+        if (!dryRun) {
+          await db.update(ingredients).set({ name: cleaned }).where(eq(ingredients.id, row.id));
+        }
+      }
+    }
+
+    // Also clean ingredient names inside recipes
+    if (!dryRun) {
+      const allRecipes = await db.select({ id: recipes.id, ingredientsWithMeasures: recipes.ingredientsWithMeasures }).from(recipes);
+      let recipesFixed = 0;
+      for (const recipe of allRecipes) {
+        const ings = recipe.ingredientsWithMeasures as { name: string; amount: string; section?: string; ingredient_id?: string }[] ?? [];
+        if (ings.length === 0) continue;
+        let changed = false;
+        const updated = ings.map((ing) => {
+          const cleanName = cleanIngredientNameFull(ing.name);
+          if (cleanName !== ing.name) changed = true;
+          return { ...ing, name: cleanName };
+        });
+        if (changed) {
+          await db.update(recipes).set({ ingredientsWithMeasures: updated }).where(eq(recipes.id, recipe.id));
+          recipesFixed++;
+        }
+      }
+      invalidateIngredientCache();
+      console.log(`[Clean Names] Also fixed ${recipesFixed} recipes`);
+    }
+
+    console.log(`[Clean Names] ${actions.length} ingredients cleaned (dry_run=${dryRun})`);
+    res.json({ dry_run: dryRun, cleaned: actions.length, actions });
+  } catch (err: any) {
+    console.error("[Clean Names]", err.message || err);
+    res.status(500).json({ error: "Failed", detail: err.message });
+  }
+});
+
 app.listen(PORT, async () => {
   await seedTags();
   console.log(`Feslihan API running on http://localhost:${PORT}`);

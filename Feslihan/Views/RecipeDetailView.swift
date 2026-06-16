@@ -537,7 +537,9 @@ struct RecipeDetailView: View {
         return recipe.ingredients.map { ingredient in
             Ingredient(
                 name: ingredient.name,
-                amount: scaleAmount(ingredient.amount, by: servingMultiplier)
+                amount: scaleAmount(ingredient.amount, by: servingMultiplier),
+                baseName: ingredient.baseName,
+                section: ingredient.section
             )
         }
     }
@@ -585,11 +587,69 @@ struct RecipeDetailView: View {
     // MARK: - Instructions View
 
     private var instructionsView: some View {
-        Text(recipe.instructions)
-            .font(.system(size: 15, weight: .regular))
-            .foregroundStyle(DS.ink)
-            .lineSpacing(6)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        let parts = parseInstructionSections(recipe.instructions)
+        return VStack(alignment: .leading, spacing: 16) {
+            ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                VStack(alignment: .leading, spacing: 8) {
+                    if let header = part.header {
+                        Text(header)
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundStyle(DS.ember)
+                    }
+                    Text(part.body)
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundStyle(DS.ink)
+                        .lineSpacing(6)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private struct InstructionSection {
+        let header: String?
+        let body: String
+    }
+
+    /// Splits instructions into sections by detecting all-caps header lines ending with ":"
+    private func parseInstructionSections(_ text: String) -> [InstructionSection] {
+        let lines = text.components(separatedBy: "\n")
+        var sections: [InstructionSection] = []
+        var currentHeader: String? = nil
+        var currentLines: [String] = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if isSectionHeader(trimmed) {
+                if !currentLines.isEmpty {
+                    let body = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !body.isEmpty {
+                        sections.append(InstructionSection(header: currentHeader, body: body))
+                    }
+                    currentLines = []
+                }
+                currentHeader = trimmed.replacingOccurrences(of: ":$", with: "", options: .regularExpression)
+            } else {
+                currentLines.append(line)
+            }
+        }
+
+        let body = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !body.isEmpty {
+            sections.append(InstructionSection(header: currentHeader, body: body))
+        }
+
+        return sections
+    }
+
+    private func isSectionHeader(_ line: String) -> Bool {
+        guard line.hasSuffix(":") || line.hasSuffix(":\n") else { return false }
+        let content = line.replacingOccurrences(of: ":$", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        guard content.count >= 2, content.count <= 40 else { return false }
+        // Must be all uppercase Turkish letters/spaces (section header)
+        let uppercased = content.uppercased(with: Locale(identifier: "tr_TR"))
+        return content == uppercased && !content.contains(where: { $0.isNumber })
     }
 
     // MARK: - Macros View

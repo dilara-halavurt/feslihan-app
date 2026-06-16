@@ -78,7 +78,13 @@ enum ClaudeService {
         return ProcessedRecipe(
             title: recipeJSON.title ?? "",
             ingredients: (recipeJSON.ingredients ?? []).enumerated().map { index, ing in
-                Ingredient(name: ing.name, amount: ing.amount, baseName: index < baseIngs.count ? baseIngs[index] : nil)
+                let sec = ing.section?.trimmingCharacters(in: .whitespaces)
+                return Ingredient(
+                    name: ing.name,
+                    amount: ing.amount,
+                    baseName: index < baseIngs.count ? baseIngs[index] : nil,
+                    section: (sec?.isEmpty ?? true) ? nil : sec
+                )
             },
             instructions: recipeJSON.instructions ?? "",
             cookingTimeMinutes: recipeJSON.cookingTimeMinutes,
@@ -270,4 +276,5 @@ private struct RecipeJSON: Decodable {
 private struct IngredientJSON: Decodable {
     let name: String
     let amount: String
+    let section: String?
 }

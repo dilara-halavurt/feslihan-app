@@ -21,10 +21,17 @@ struct CookingModeView: View {
             VStack(spacing: 0) {
                 // Top bar
                 HStack {
-                    Text("ADIM \(currentIndex + 1) / \(steps.count)")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .tracking(0.4)
-                        .foregroundStyle(.white.opacity(0.55))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("ADIM \(currentIndex + 1) / \(steps.count)")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .tracking(0.4)
+                            .foregroundStyle(.white.opacity(0.55))
+                        if let section = steps[currentIndex].section {
+                            Text(section)
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .foregroundStyle(DS.honey.opacity(0.7))
+                        }
+                    }
 
                     Spacer()
 
@@ -64,6 +71,16 @@ struct CookingModeView: View {
                     ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
                         VStack(spacing: 24) {
                             Spacer()
+
+                            // Section name (if sectioned recipe)
+                            if let section = step.section,
+                               index == 0 || steps[index - 1].section != section {
+                                Text(section)
+                                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                                    .tracking(1.2)
+                                    .foregroundStyle(DS.emberLight.opacity(0.7))
+                                    .textCase(.uppercase)
+                            }
 
                             // Recipe name
                             Text(title)
@@ -375,37 +392,64 @@ struct CookingStep: Identifiable {
     let number: Int
     let text: String
     let timerDuration: Int? // seconds
+    let section: String? // e.g. "KARAMEL", "KEK HAMURU"
 }
 
 // MARK: - Parser
 
 extension CookingStep {
     /// Parse numbered instructions text into cooking steps.
-    /// Detects timer durations from phrases like "30 dakika", "5 dk", "1 saat".
+    /// Detects section headers (ALL CAPS + ":") and timer durations.
     static func parse(from instructions: String) -> [CookingStep] {
+        // First, build a map of line positions to section names
+        let lines = instructions.components(separatedBy: "\n")
+        var sectionAtLine: [Int: String] = [:]
+        for (i, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if isSectionHeader(trimmed) {
+                sectionAtLine[i] = trimmed.replacingOccurrences(of: ":$", with: "", options: .regularExpression)
+            }
+        }
+
         // Split by numbered prefixes: "1.", "2.", etc.
         let pattern = #"(?:^|\n)\s*(\d+)\.\s*"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
-            return instructions
-                .components(separatedBy: "\n")
-                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            return lines
+                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty && !isSectionHeader($0.trimmingCharacters(in: .whitespaces)) }
                 .enumerated()
-                .map { CookingStep(number: $0.offset + 1, text: $0.element.trimmingCharacters(in: .whitespaces), timerDuration: nil) }
+                .map { CookingStep(number: $0.offset + 1, text: $0.element.trimmingCharacters(in: .whitespaces), timerDuration: nil, section: nil) }
         }
 
         let nsString = instructions as NSString
         let matches = regex.matches(in: instructions, range: NSRange(location: 0, length: nsString.length))
 
         guard !matches.isEmpty else {
-            return instructions
-                .components(separatedBy: "\n")
-                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            return lines
+                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty && !isSectionHeader($0.trimmingCharacters(in: .whitespaces)) }
                 .enumerated()
-                .map { CookingStep(number: $0.offset + 1, text: $0.element.trimmingCharacters(in: .whitespaces), timerDuration: nil) }
+                .map { CookingStep(number: $0.offset + 1, text: $0.element.trimmingCharacters(in: .whitespaces), timerDuration: nil, section: nil) }
         }
 
+        // Build line offset map to find which section each match belongs to
+        var lineOffsets: [Int] = []
+        var offset = 0
+        for line in lines {
+            lineOffsets.append(offset)
+            offset += line.count + 1 // +1 for \n
+        }
+
+        var currentSection: String? = nil
         var steps: [CookingStep] = []
         for (i, match) in matches.enumerated() {
+            // Determine section: find the latest section header before this match
+            let matchPos = match.range.location
+            for (lineIdx, lineOffset) in lineOffsets.enumerated() {
+                if lineOffset > matchPos { break }
+                if let sec = sectionAtLine[lineIdx] {
+                    currentSection = sec
+                }
+            }
+
             let numberRange = Range(match.range(at: 1), in: instructions)!
             let stepNumber = Int(instructions[numberRange]) ?? (i + 1)
 
@@ -415,10 +459,19 @@ extension CookingStep {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
             let duration = extractTimer(from: content)
-            steps.append(CookingStep(number: stepNumber, text: content, timerDuration: duration))
+            steps.append(CookingStep(number: stepNumber, text: content, timerDuration: duration, section: currentSection))
         }
 
         return steps
+    }
+
+    /// Check if a line is a section header (ALL CAPS text ending with ":")
+    private static func isSectionHeader(_ line: String) -> Bool {
+        guard line.hasSuffix(":") else { return false }
+        let content = String(line.dropLast()).trimmingCharacters(in: .whitespaces)
+        guard content.count >= 2, content.count <= 40 else { return false }
+        let uppercased = content.uppercased(with: Locale(identifier: "tr_TR"))
+        return content == uppercased && !content.contains(where: { $0.isNumber })
     }
 
     /// Extract timer duration in seconds from step text.

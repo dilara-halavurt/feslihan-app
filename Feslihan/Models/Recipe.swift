@@ -84,4 +84,5 @@ struct Ingredient: Codable, Identifiable, Hashable {
     var name: String
     var amount: String
     var baseName: String?
+    var section: String?
 }

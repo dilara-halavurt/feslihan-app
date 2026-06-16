@@ -3,6 +3,7 @@ import ClerkKit
 
 /// Reusable ingredient list component.
 /// Shows pantry status (green dot = have, red dot = need) and add-to-shopping-list button.
+/// Groups ingredients by section when sections are present.
 struct IngredientsView: View {
     let ingredients: [Ingredient]
     @State private var pantryNames: Set<String> = []
@@ -16,6 +17,33 @@ struct IngredientsView: View {
     /// Convenience init for plain string lists (e.g. shopping list / meal prep).
     init(items: [String]) {
         self.ingredients = items.map { Ingredient(name: $0, amount: "") }
+    }
+
+    private var hasSections: Bool {
+        ingredients.contains { $0.section != nil }
+    }
+
+    private var groupedIngredients: [(section: String?, items: [Ingredient])] {
+        var groups: [(section: String?, items: [Ingredient])] = []
+        var currentSection: String? = nil
+        var currentItems: [Ingredient] = []
+
+        for ingredient in ingredients {
+            let sec = ingredient.section
+            if sec != currentSection {
+                if !currentItems.isEmpty {
+                    groups.append((section: currentSection, items: currentItems))
+                }
+                currentSection = sec
+                currentItems = [ingredient]
+            } else {
+                currentItems.append(ingredient)
+            }
+        }
+        if !currentItems.isEmpty {
+            groups.append((section: currentSection, items: currentItems))
+        }
+        return groups
     }
 
     var body: some View {
@@ -36,9 +64,46 @@ struct IngredientsView: View {
                 .padding(.bottom, 10)
             }
 
-            ForEach(Array(ingredients.enumerated()), id: \.element.id) { index, ingredient in
+            if hasSections {
+                sectionsView
+            } else {
+                flatListView(ingredients)
+            }
+        }
+        .task {
+            await loadPantry()
+        }
+    }
+
+    // MARK: - Sections View
+
+    private var sectionsView: some View {
+        VStack(spacing: 16) {
+            ForEach(Array(groupedIngredients.enumerated()), id: \.offset) { _, group in
+                VStack(alignment: .leading, spacing: 0) {
+                    if let section = group.section {
+                        Text(section)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(DS.ember)
+                            .textCase(.uppercase)
+                            .padding(.bottom, 8)
+                    }
+                    flatListView(group.items)
+                }
+                .padding(12)
+                .background(DS.sand.opacity(0.5))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+        }
+    }
+
+    // MARK: - Flat List
+
+    private func flatListView(_ items: [Ingredient]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, ingredient in
                 let raw = ingredient.baseName ?? ingredient.name
-            let key = raw.replacingOccurrences(of: "\\s*\\(.*?\\)\\s*", with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces).lowercased()
+                let key = raw.replacingOccurrences(of: "\\s*\\(.*?\\)\\s*", with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces).lowercased()
                 let inPantry = pantryNames.contains(key)
                 let inCart = shoppingListNames.contains(key)
 
@@ -84,13 +149,10 @@ struct IngredientsView: View {
                 .padding(.vertical, 10)
                 .padding(.horizontal, 4)
 
-                if index < ingredients.count - 1 {
+                if index < items.count - 1 {
                     Divider().padding(.leading, isLoaded ? 23 : 0)
                 }
             }
-        }
-        .task {
-            await loadPantry()
         }
     }
 

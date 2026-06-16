@@ -17,6 +17,7 @@ interface AnalyzeRequest {
   frames?: string[]; // base64 encoded images
   cover_image?: string; // base64 encoded cover/og:image (may have play icon)
   audio?: string; // base64 encoded audio (m4a)
+  existing_ingredients?: string[]; // known ingredient names from DB
 }
 
 interface MealPlanRequest {
@@ -75,7 +76,8 @@ Eger icerik bir yemek tarifi ISE, asagidaki JSON formatinda yanit ver (baska hic
     "ingredients": [
         {
             "name": "Malzeme adi (Turkce)",
-            "amount": "Miktar ve birimi"
+            "amount": "Miktar ve birimi",
+            "section": "Bolum adi (opsiyonel)"
         }
     ],
     "base_ingredients": ["Tereyağı", "Yumurta", "Un", "Şeker", "Süt"],
@@ -100,10 +102,13 @@ Eger icerik bir yemek tarifi ISE, asagidaki JSON formatinda yanit ver (baska hic
 
 Onemli kurallar:
 - Tum icerik Turkce olmali
+- MALZEME ADLARI: Her kelimenin ilk harfi BUYUK olmali, Turkce karakterler kullanilmali. DOGRU: "Sıvı Krema", "Labne Peyniri", "Toz Şeker". YANLIS: "sıvı krema", "labne peynir", "toz seker". Ekstra bosluk veya anlamsiz karakter OLMASIN.
 - Miktarlar net olmali (ornegin: "2 su bardagi", "1 tatli kasigi")
 - Icerik baska bir dilde ise Turkce'ye cevir
 - Caption, ses ve gorsellerdeki bilgileri birlestirerek en eksiksiz tarifi olustur
 - base_ingredients: Tekil, kisa, KOK malzeme isimleri (tekrarsiz). SADECE malzemenin temel adi olmali. Ilk harf buyuk, Turkce karakterler kullan.
+  KRITIK: Asagida mevcut malzeme listemiz var. base_ingredients icin MUTLAKA bu listeden sec. Yeni isim UYDURMA. Eger malzeme listede yoksa, en yakin esleseni sec. Sadece listede hicbir eslesen yoksa yeni isim olusturabilirsin.
+  ${input.existing_ingredients?.length ? `MEVCUT MALZEME LISTESI:\n  ${input.existing_ingredients.join(", ")}` : ""}
   DOGRU ornekler: "Tereyağı", "Yumurta", "Un", "Süt", "Şeker", "Tuz", "Zeytinyağı", "Soğan", "Sarımsak", "Domates", "Biber", "Maydanoz", "Kıyma", "Tavuk Göğsü", "Krema", "Patates"
   YANLIS - asla yapma:
   - Ambalaj/paketleme: "Şişe zeytinyağı", "Kutu domates", "Paket maya" → DOGRU: "Zeytinyağı", "Domates", "Maya"
@@ -115,6 +120,12 @@ Onemli kurallar:
   - Birlestirme: "Tuz, karabiber, pul biber (baharat seti)" → DOGRU: her birini ayri yaz: "Tuz", "Karabiber", "Pul Biber"
   - Kullanim notu: "Kızartma için zeytinyağı", "Tel şehriye (çorba için)", "Krema - soğutulmuş" → DOGRU: "Zeytinyağı", "Tel Şehriye", "Krema"
   - "Taze" oneki: "Taze maydanoz", "Taze zencefil", "Taze fesleğen" → DOGRU: "Maydanoz", "Zencefil", "Fesleğen" (ISTISNA: "Taze fasulye" farkli bir sebzedir, aynen kalir)
+- BOLUMLU TARIFLER (SECTIONS): Bazi tariflerde birden fazla bolum vardir (ornegin "Karamel", "Kek Hamuru", "Sos", "Ic Harci", "Montaj", "Ganaj", "Uzeri icin" gibi). Eger tarifin farkli bolumleri varsa:
+  1. Her malzemeye "section" alani ekle (ornegin: {"name": "Toz Seker", "amount": "150 g", "section": "Karamel"}). Bolumu olmayan malzemeler icin section alanini bos birak ("").
+  2. Instructions'da her bolumu BUYUK HARFLE ve ":" ile baslat, ardindan o bolumun adimlarini yaz. Ornek:
+     "KARAMEL:\\n1. 150 g toz sekeri eritin...\\n2. Kremanin ustune dokun...\\n\\nKEK HAMURU:\\n3. Tereyagini cirpin...\\n4. Yumurtalari ekleyin..."
+  3. Adim numaralari tum tarif boyunca devam etsin (bolum basinda sifirlanmasin).
+  Eger tarif tek bolumden olusuyorsa (cogu tarif), section alanini KULLANMA ve instructions'a bolum basligi EKLEME.
 - ONEMLI: Eger yapilis adimlarinda gecen ama malzeme listesinde olmayan malzemeler varsa (ornegin "tuz", "karabiber", "su", "zeytinyagi" gibi), bunlari da "ingredients" listesine miktar belirtmeden ekle (amount: "").  base_ingredients'a da ekle.
 - Kalorileri ve makrolari malzemelere ve miktarlara gore tahmin et (kesin olmasi gerekmez)
 - cuisine: Tarifin mutfak turunu belirle. Degerler: "italian", "chinese", "mexican", "indian", "thai", "french", "japanese", "mediterranean", "turkish", "other"

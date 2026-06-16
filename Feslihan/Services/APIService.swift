@@ -449,7 +449,9 @@ extension RecipeDTO {
             title: processed.title,
             description: processed.instructions,
             ingredients_with_measures: processed.ingredients.map {
-                ["name": $0.name, "amount": $0.amount]
+                var dict = ["name": $0.name, "amount": $0.amount]
+                if let section = $0.section { dict["section"] = section }
+                return dict
             },
             ingredients_without_measures: processed.baseIngredients,
             servings: processed.servings,
@@ -475,10 +477,12 @@ extension RecipeDTO {
     /// Convert DTO to local SwiftData Recipe. Call from async context.
     func toRecipe(thumbnailData: Data? = nil) -> Recipe {
         let ingredients = ingredients_with_measures.enumerated().map { index, item in
-            Ingredient(
+            let sec = item["section"]?.trimmingCharacters(in: .whitespaces)
+            return Ingredient(
                 name: item["name"] ?? "",
                 amount: item["amount"] ?? "",
-                baseName: index < ingredients_without_measures.count ? ingredients_without_measures[index] : nil
+                baseName: index < ingredients_without_measures.count ? ingredients_without_measures[index] : nil,
+                section: (sec?.isEmpty ?? true) ? nil : sec
             )
         }
 
@@ -510,10 +514,12 @@ extension RecipeDTO {
     /// Convert DTO from backend to ProcessedRecipe for the UI.
     func toProcessedRecipe() -> ProcessedRecipe {
         let ingredients = ingredients_with_measures.enumerated().map { index, item in
-            Ingredient(
+            let sec = item["section"]?.trimmingCharacters(in: .whitespaces)
+            return Ingredient(
                 name: item["name"] ?? "",
                 amount: item["amount"] ?? "",
-                baseName: index < ingredients_without_measures.count ? ingredients_without_measures[index] : nil
+                baseName: index < ingredients_without_measures.count ? ingredients_without_measures[index] : nil,
+                section: (sec?.isEmpty ?? true) ? nil : sec
             )
         }
 
