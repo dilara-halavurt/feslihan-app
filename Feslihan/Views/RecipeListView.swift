@@ -103,6 +103,15 @@ struct RecipeListView: View {
                 return false
             }
         }
+        if !filters.ingredients.isEmpty {
+            let recipeIngs = Set(recipe.ingredients.map {
+                ($0.baseName ?? $0.name).lowercased()
+            })
+            let selected = filters.ingredients.map { $0.lowercased() }
+            if !selected.allSatisfy({ recipeIngs.contains($0) }) {
+                return false
+            }
+        }
         return true
     }
 
@@ -124,6 +133,10 @@ struct RecipeListView: View {
         if hasExpensive { return "expensive" }
         if hasNeutral { return "neutral" }
         return "cheap"
+    }
+
+    private var availableIngredients: [String] {
+        Array(Set(recipes.flatMap { $0.ingredients.map { $0.baseName ?? $0.name } })).sorted()
     }
 
     private var availableTags: [String] {
@@ -158,6 +171,9 @@ struct RecipeListView: View {
                 ForEach(filters.priceTiers.sorted(), id: \.self) { tier in
                     let label = priceTierOptions.first(where: { $0.value == tier })?.label ?? tier
                     ActiveFilterChip(label: label) { filters.priceTiers.remove(tier) }
+                }
+                ForEach(filters.ingredients.sorted(), id: \.self) { ingredient in
+                    ActiveFilterChip(label: ingredient) { filters.ingredients.remove(ingredient) }
                 }
 
                 Button {
@@ -226,6 +242,7 @@ struct RecipeListView: View {
                     filters: $filters,
                     availableTags: availableTags,
                     availableCuisines: availableCuisines,
+                    availableIngredients: availableIngredients,
                     matchingCount: filtered.count
                 )
                 .presentationDetents([.medium, .large])
@@ -1009,6 +1026,7 @@ struct RecipeFilters: Equatable {
     var difficulties: Set<String> = []
     var cookingTimeRange: CookingTimeRange? = nil
     var priceTiers: Set<String> = []
+    var ingredients: Set<String> = []
 
     var activeCount: Int {
         var count = 0
@@ -1017,6 +1035,7 @@ struct RecipeFilters: Equatable {
         if !difficulties.isEmpty { count += 1 }
         if cookingTimeRange != nil { count += 1 }
         if !priceTiers.isEmpty { count += 1 }
+        if !ingredients.isEmpty { count += 1 }
         return count
     }
 
@@ -1028,6 +1047,7 @@ struct RecipeFilters: Equatable {
         difficulties = []
         cookingTimeRange = nil
         priceTiers = []
+        ingredients = []
     }
 }
 
@@ -1076,14 +1096,59 @@ struct RecipeFilterSheet: View {
     @Binding var filters: RecipeFilters
     let availableTags: [String]
     let availableCuisines: [String]
+    let availableIngredients: [String]
     let matchingCount: Int
     @Environment(\.dismiss) private var dismiss
+    @State private var ingredientSearch = ""
+
+    private var filteredIngredients: [String] {
+        if ingredientSearch.isEmpty {
+            // Show selected ones first, then top ingredients
+            let selected = availableIngredients.filter { filters.ingredients.contains($0) }
+            let rest = availableIngredients.filter { !filters.ingredients.contains($0) }
+            return selected + Array(rest.prefix(20))
+        }
+        return availableIngredients.filter {
+            $0.localizedCaseInsensitiveContains(ingredientSearch)
+        }
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    // Ingredient filter
+                    if !availableIngredients.isEmpty {
+                        FilterSection(title: "Malzeme", selectedCount: filters.ingredients.count) {
+                            VStack(spacing: 10) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(DS.dust)
+                                    TextField("Malzeme ara...", text: $ingredientSearch)
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(DS.ink)
+                                }
+                                .padding(10)
+                                .background(DS.sand)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                                FilterChipGrid(
+                                    items: filteredIngredients,
+                                    isSelected: { filters.ingredients.contains($0) },
+                                    toggle: { ingredient in
+                                        if filters.ingredients.contains(ingredient) {
+                                            filters.ingredients.remove(ingredient)
+                                        } else {
+                                            filters.ingredients.insert(ingredient)
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+
                     if !availableTags.isEmpty {
                         FilterSection(title: "Etiket", selectedCount: filters.tags.count) {
                             FilterChipGrid(
