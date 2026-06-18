@@ -106,6 +106,27 @@ enum CaptionService {
         return patterns.contains { lower.contains($0) }
     }
 
+    /// Fetch an Instagram creator's profile picture by scraping their profile page.
+    /// Works from real iOS devices where Instagram serves full HTML (servers get blocked).
+    static func fetchInstagramProfilePic(username: String) async -> Data? {
+        guard let url = URL(string: "https://www.instagram.com/\(username)/") else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+        let html = decodeResponseData(data, response: response)
+        // og:image on a profile page is the profile picture
+        guard let picURL = extractMetaContent(from: html, attr: "property", value: "og:image")
+                ?? extractMetaContent(from: html, attr: "name", value: "twitter:image") else { return nil }
+        let cleaned = picURL
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+        // Real profile pics come from scontent/fbcdn CDNs; skip generic Instagram logo
+        guard cleaned.contains("scontent") || cleaned.contains("fbcdn") else { return nil }
+        return await downloadImage(from: cleaned)
+    }
+
     private static let userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 
     private static func fetchFromHTML(urlString: String) async throws -> CaptionResult {
