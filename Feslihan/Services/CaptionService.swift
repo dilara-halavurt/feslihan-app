@@ -106,9 +106,35 @@ enum CaptionService {
         return patterns.contains { lower.contains($0) }
     }
 
-    /// Fetch an Instagram creator's profile picture by scraping their profile page.
-    /// Works from real iOS devices where Instagram serves full HTML (servers get blocked).
+    /// Fetch an Instagram creator's profile picture. Tries multiple strategies in order.
     static func fetchInstagramProfilePic(username: String) async -> Data? {
+        // Strategy 1: Instagram web profile API (used by instagram.com itself)
+        if let data = await fetchInstagramProfilePicFromAPI(username: username) { return data }
+        // Strategy 2: Profile page og:image scraping
+        if let data = await fetchInstagramProfilePicFromHTML(username: username) { return data }
+        return nil
+    }
+
+    /// Use Instagram's internal web API — works from real devices with proper headers.
+    private static func fetchInstagramProfilePicFromAPI(username: String) async -> Data? {
+        guard let url = URL(string: "https://i.instagram.com/api/v1/users/web_profile_info/?username=\(username)") else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("936619743392459", forHTTPHeaderField: "X-IG-App-ID")
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let userData = json["data"] as? [String: Any],
+              let user = userData["user"] as? [String: Any] else { return nil }
+        // Try HD version first, then standard
+        let picURL = user["profile_pic_url_hd"] as? String ?? user["profile_pic_url"] as? String
+        guard let picURL, !picURL.isEmpty else { return nil }
+        return await downloadImage(from: picURL)
+    }
+
+    /// Scrape the profile page og:image — the og:image on a profile page is the profile picture.
+    private static func fetchInstagramProfilePicFromHTML(username: String) async -> Data? {
         guard let url = URL(string: "https://www.instagram.com/\(username)/") else { return nil }
         var request = URLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
@@ -116,7 +142,6 @@ enum CaptionService {
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
         let html = decodeResponseData(data, response: response)
-        // og:image on a profile page is the profile picture
         guard let picURL = extractMetaContent(from: html, attr: "property", value: "og:image")
                 ?? extractMetaContent(from: html, attr: "name", value: "twitter:image") else { return nil }
         let cleaned = picURL

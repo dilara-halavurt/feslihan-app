@@ -570,8 +570,9 @@ struct AddRecipeView: View {
         if let author = captionResult.authorName, !author.isEmpty {
             dto.platform_user = author
         }
-        // For Instagram: fetch profile pic from the device (servers get blocked)
-        if dto.creator_profile_pic_base64 == nil, let username = dto.platform_user {
+        // Fetch profile pic from the device (social platforms block server IPs)
+        if dto.creator_profile_pic_base64 == nil, detectPlatform() == "instagram",
+           let username = dto.platform_user {
             let picData = await CaptionService.fetchInstagramProfilePic(username: username)
             dto.creator_profile_pic_base64 = picData?.base64EncodedString()
         }
