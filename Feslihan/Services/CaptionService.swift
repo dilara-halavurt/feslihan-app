@@ -4,6 +4,7 @@ struct CaptionResult {
     let caption: String
     let thumbnailData: Data?
     var authorName: String?
+    var authorProfilePicData: Data?
 }
 
 enum CaptionService {
@@ -40,7 +41,8 @@ enum CaptionService {
                 let thumbData = await downloadImage(from: thumbURL)
                 let author = json["author_unique_id"] as? String
                     ?? json["author_name"] as? String
-                return CaptionResult(caption: title, thumbnailData: thumbData, authorName: author)
+                let authorPicData = await downloadImage(from: json["author_thumbnail_url"] as? String)
+                return CaptionResult(caption: title, thumbnailData: thumbData, authorName: author, authorProfilePicData: authorPicData)
             }
         }
 

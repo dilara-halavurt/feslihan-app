@@ -423,6 +423,8 @@ struct RecipeDTO: Codable {
     var thumbnail_base64: String?
     var freezer_friendly: Bool?
 
+    var creator_profile_pic_base64: String?
+
     var requested_by: String
     var user_id: String?
     var folder_id: String?

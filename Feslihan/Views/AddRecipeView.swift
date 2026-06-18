@@ -565,6 +565,7 @@ struct AddRecipeView: View {
             userId: Clerk.shared.user?.id
         )
         dto.thumbnail_base64 = captionResult.thumbnailData?.base64EncodedString()
+        dto.creator_profile_pic_base64 = captionResult.authorProfilePicData?.base64EncodedString()
         // Prefer oEmbed author over Claude's extraction
         if let author = captionResult.authorName, !author.isEmpty {
             dto.platform_user = author
