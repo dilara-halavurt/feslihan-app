@@ -647,7 +647,7 @@ async function enrichRecipes(recipes: any[]): Promise<any[]> {
   });
 }
 
-async function ensureCreator(username: string | null | undefined, platform: "instagram" | "tiktok" | "x" | "nefisyemektarifleri" | "other") {
+async function ensureCreator(username: string | null | undefined, platform: "instagram" | "tiktok" | "x" | "nefisyemektarifleri" | "other", sourceUrl?: string) {
   if (!username) return;
   const trimmed = username.trim().toLowerCase();
   if (!trimmed) return;
@@ -665,35 +665,84 @@ async function ensureCreator(username: string | null | undefined, platform: "ins
 
   try {
     if (platform === "instagram") {
-      const res = await fetch(`https://www.instagram.com/${trimmed}/`, {
-        headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15" },
-      });
-      const html = await res.text();
-      const match = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
-        || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-      if (match?.[1]) {
-        const picUrl = match[1].replace(/&amp;/g, "&");
-        // Skip generic Instagram logo — real profile pics come from scontent/fbcdn CDNs
-        const isRealProfilePic = picUrl.includes("scontent") || picUrl.includes("fbcdn");
-        if (isRealProfilePic) {
-          const picRes = await fetch(picUrl);
-          if (picRes.ok) {
-            const buffer = Buffer.from(await picRes.arrayBuffer());
-            profilePictureUrl = await uploadImage(buffer.toString("base64"));
+      // Try 1: Extract profile pic from the post's embed page
+      if (sourceUrl) {
+        try {
+          const embedUrl = sourceUrl.replace(/\/?$/, "/embed/");
+          const res = await fetch(embedUrl, {
+            headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15" },
+          });
+          const html = await res.text();
+          const profilePicMatch = html.match(/"profile_pic_url"\s*:\s*"([^"]+)"/);
+          if (profilePicMatch?.[1]) {
+            const picUrl = profilePicMatch[1].replace(/\\u0026/g, "&").replace(/\\\//g, "/");
+            const picRes = await fetch(picUrl);
+            if (picRes.ok) {
+              const buffer = Buffer.from(await picRes.arrayBuffer());
+              profilePictureUrl = await uploadImage(buffer.toString("base64"));
+            }
+          }
+          if (!displayName) {
+            const nameMatch = html.match(/"full_name"\s*:\s*"([^"]+)"/);
+            if (nameMatch?.[1]) {
+              displayName = nameMatch[1].replace(/\\u([0-9a-fA-F]{4})/g, (_: string, code: string) =>
+                String.fromCharCode(parseInt(code, 16))
+              );
+            }
+          }
+        } catch {}
+      }
+      // Try 2: Fallback to profile page og:image
+      if (!profilePictureUrl) {
+        const res = await fetch(`https://www.instagram.com/${trimmed}/`, {
+          headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15" },
+        });
+        const html = await res.text();
+        const match = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+          || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+        if (match?.[1]) {
+          const picUrl = match[1].replace(/&amp;/g, "&");
+          // Skip generic Instagram logo — real profile pics come from scontent/fbcdn CDNs
+          const isRealProfilePic = picUrl.includes("scontent") || picUrl.includes("fbcdn");
+          if (isRealProfilePic) {
+            const picRes = await fetch(picUrl);
+            if (picRes.ok) {
+              const buffer = Buffer.from(await picRes.arrayBuffer());
+              profilePictureUrl = await uploadImage(buffer.toString("base64"));
+            }
           }
         }
       }
     } else if (platform === "tiktok") {
-      // Use oEmbed to get author info
-      const res = await fetch(`https://www.tiktok.com/oembed?url=https://www.tiktok.com/@${trimmed}`);
-      if (res.ok) {
-        const data = await res.json() as any;
-        displayName = data.author_name || null;
-        if (data.author_thumbnail_url) {
-          const picRes = await fetch(data.author_thumbnail_url);
-          if (picRes.ok) {
-            const buffer = Buffer.from(await picRes.arrayBuffer());
-            profilePictureUrl = await uploadImage(buffer.toString("base64"));
+      // Try 1: oEmbed with the actual video URL (more reliable)
+      if (sourceUrl) {
+        try {
+          const res = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(sourceUrl)}`);
+          if (res.ok) {
+            const data = await res.json() as any;
+            displayName = data.author_name || null;
+            if (data.author_thumbnail_url) {
+              const picRes = await fetch(data.author_thumbnail_url);
+              if (picRes.ok) {
+                const buffer = Buffer.from(await picRes.arrayBuffer());
+                profilePictureUrl = await uploadImage(buffer.toString("base64"));
+              }
+            }
+          }
+        } catch {}
+      }
+      // Try 2: Fallback to oEmbed with profile URL
+      if (!profilePictureUrl) {
+        const res = await fetch(`https://www.tiktok.com/oembed?url=https://www.tiktok.com/@${trimmed}`);
+        if (res.ok) {
+          const data = await res.json() as any;
+          if (!displayName) displayName = data.author_name || null;
+          if (data.author_thumbnail_url) {
+            const picRes = await fetch(data.author_thumbnail_url);
+            if (picRes.ok) {
+              const buffer = Buffer.from(await picRes.arrayBuffer());
+              profilePictureUrl = await uploadImage(buffer.toString("base64"));
+            }
           }
         }
       }
@@ -779,7 +828,7 @@ app.post("/recipes", async (req, res) => {
 
   // Ensure instagram user exists before inserting recipe (FK)
   const creatorUsername = data.platform_user || meta.platformUser || extractUserFromURL(data.url) || "unknown";
-  await ensureCreator(creatorUsername, data.platform);
+  await ensureCreator(creatorUsername, data.platform, data.url);
 
   // Resolve ingredient IDs for ingredients_with_measures
   const ingWithMeasures: { name: string; amount: string; section?: string; ingredient_id: string }[] = (data.ingredients_with_measures ?? []).map(
@@ -1663,7 +1712,12 @@ app.get("/creators/:username", async (req, res) => {
   // If creator has no profile picture, fetch it before responding
   if (!user.profilePictureUrl) {
     try {
-      await ensureCreator(user.username, user.platform);
+      const creatorRecipe = await db
+        .select({ url: recipes.url })
+        .from(recipes)
+        .where(eq(recipes.platformUser, user.username))
+        .limit(1);
+      await ensureCreator(user.username, user.platform, creatorRecipe[0]?.url || undefined);
       // Re-fetch to get the updated profile picture URL
       const updated = await db
         .select()
@@ -2741,7 +2795,14 @@ app.post("/admin/fill-creator-pictures", async (_req, res) => {
   let failed = 0;
   for (const creator of creators) {
     try {
-      await ensureCreator(creator.username, creator.platform);
+      // Find a recipe URL to use as source for profile pic extraction
+      const creatorRecipe = await db
+        .select({ url: recipes.url })
+        .from(recipes)
+        .where(eq(recipes.platformUser, creator.username))
+        .limit(1);
+      const sourceUrl = creatorRecipe[0]?.url || undefined;
+      await ensureCreator(creator.username, creator.platform, sourceUrl);
       // Check if it was actually filled
       const updated = await db
         .select({ profilePictureUrl: platformCreators.profilePictureUrl })
