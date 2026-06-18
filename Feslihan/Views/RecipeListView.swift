@@ -684,6 +684,7 @@ struct RecipeListView: View {
                 existing.fiberGrams = dto.fiber_grams
                 existing.folderId = dto.folder_id
                 existing.isFavorite = dto.is_favorite ?? false
+                existing.saveCount = dto.save_count ?? 0
                 if existing.thumbnailData == nil, let url = fullThumbURL {
                     needsThumbnail.append((existing, url))
                 }

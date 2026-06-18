@@ -121,6 +121,18 @@ struct RecipeDetailView: View {
                                         .background(DS.sand)
                                         .clipShape(Capsule())
                                 }
+                                if recipe.saveCount >= 1 {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "heart.fill")
+                                        Text("\(recipe.saveCount) kez kaydedildi")
+                                    }
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(DS.terracotta)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(DS.sand)
+                                    .clipShape(Capsule())
+                                }
                             }
                         }
 

@@ -240,7 +240,8 @@ struct ShoppingListView: View {
                     price_tier: item.price_tier,
                     availability: item.availability,
                     is_checked: newChecked,
-                    added_at: item.added_at
+                    added_at: item.added_at,
+                    pantry_alternative: item.pantry_alternative
                 )
             }
         }
@@ -301,11 +302,23 @@ private struct ShoppingItemRow: View {
             }
             .buttonStyle(.plain)
 
-            Text(item.ingredient_name)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(item.is_checked ? DS.dust : DS.ink)
-                .strikethrough(item.is_checked, color: DS.dust)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.ingredient_name)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(item.is_checked ? DS.dust : DS.ink)
+                    .strikethrough(item.is_checked, color: DS.dust)
+                    .lineLimit(1)
+
+                if let alt = item.pantry_alternative, !item.is_checked {
+                    HStack(spacing: 4) {
+                        Image(systemName: "leaf.fill")
+                            .font(.system(size: 9))
+                        Text("Kilerde: \(alt)")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                    }
+                    .foregroundStyle(DS.ember)
+                }
+            }
 
             Spacer()
 

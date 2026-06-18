@@ -118,6 +118,7 @@ export const recipes = pgTable("recipes", {
   healthScore: real("health_score"),
 
   // Tracking
+  saveCount: integer("save_count").notNull().default(0),
   requestedBy: varchar("requested_by", { length: 255 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -140,6 +141,7 @@ export const ingredients = pgTable("ingredients", {
   defaultUnit: varchar("default_unit", { length: 10 }),  // 'g', 'ml', 'adet'
   densityGMl: real("density_g_ml"),                       // grams per ml (for volume→weight)
   gramPerAdet: real("gram_per_adet"),                     // grams per 1 piece (for countable items)
+  alternativeIds: jsonb("alternative_ids").notNull().default([]), // IDs of alternative/substitute ingredients
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

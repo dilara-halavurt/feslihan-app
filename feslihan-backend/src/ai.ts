@@ -405,3 +405,47 @@ SADECE aşağıdaki JSON formatında yanıt ver (başka hiçbir şey yazma):
 
   return JSON.parse(jsonString);
 }
+
+export async function findAlternativeIngredients(
+  ingredientNames: string[]
+): Promise<{ name: string; alternatives: string[] }[]> {
+  const prompt = `Sen bir Türk mutfağı uzmanısın. Sana bir malzeme listesi vereceğim. Her malzeme için bu listede bulunan alternatif/yerine kullanılabilecek malzemeleri bul.
+
+Malzeme listesi:
+${ingredientNames.map((n, i) => `${i + 1}. ${n}`).join("\n")}
+
+Alternatif bulma kuralları:
+- Bir malzemenin daha basit/temel hali alternatiftir: "limon suyu" için alternatif → "limon", "bayat ekmek" için alternatif → "ekmek"
+- Aynı malzemenin farklı halleri: "ılık su" için alternatif → "su"
+- Aynı malzemenin farklı isimleri: "toz şeker" için alternatif → "şeker"
+- Kategorik alternatifler: "mevsim meyveleri" için alternatif → "çilek"
+- Benzer malzemeler: "çeri domates" için alternatif → "domates"
+- SADECE listede var olan malzemeleri alternatif olarak göster
+- Eğer bir malzemenin listede alternatifi yoksa, o malzemeyi sonuçlara dahil etme
+- İlişki TEK YÖNLÜDÜR: spesifik/detaylı malzemenin alternatives listesinde daha basit/genel olan malzeme yer alır. Tersi OLMAZ.
+
+SADECE aşağıdaki JSON formatında yanıt ver (başka hiçbir şey yazma):
+[
+  { "name": "malzeme adı", "alternatives": ["alternatif1", "alternatif2"] }
+]
+
+Sadece en az 1 alternatifi olan malzemeleri dahil et.`;
+
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 16384,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") {
+    throw new Error("No text response from Claude");
+  }
+
+  const jsonString = textBlock.text
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
+
+  return JSON.parse(jsonString);
+}

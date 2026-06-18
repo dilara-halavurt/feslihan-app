@@ -4,7 +4,7 @@ import https from "https";
 import { db } from "./db.js";
 import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders, users, mealPlans, userPantry, userShoppingList, recipeReviews } from "./schema.js";
 import { uploadImage, s3KeyFromUrl, getImage } from "./s3.js";
-import { analyzeRecipe, analyzeNutrition, generateMealPlan, classifyIngredients, classifyFreezerFriendly } from "./ai.js";
+import { analyzeRecipe, analyzeNutrition, generateMealPlan, classifyIngredients, classifyFreezerFriendly, findAlternativeIngredients } from "./ai.js";
 import { eq, desc, inArray, and, sql, isNull } from "drizzle-orm";
 
 const app = express();
@@ -370,6 +370,17 @@ async function getAllIngredients(): Promise<{ id: string; name: string }[]> {
   _cachedIngredients = await db.select({ id: ingredients.id, name: ingredients.name }).from(ingredients);
   _cacheTime = now;
   return _cachedIngredients;
+}
+
+async function saveUserRecipe(userId: string, recipeId: string) {
+  const inserted = await db
+    .insert(userRecipes)
+    .values({ userId, recipeId })
+    .onConflictDoNothing()
+    .returning();
+  if (inserted.length > 0) {
+    await db.update(recipes).set({ saveCount: sql`${recipes.saveCount} + 1` }).where(eq(recipes.id, recipeId));
+  }
 }
 
 function invalidateIngredientCache() {
@@ -743,10 +754,7 @@ app.post("/recipes", async (req, res) => {
   if (existing.length > 0) {
     // Recipe already processed — just add user mapping
     if (data.user_id) {
-      await db
-        .insert(userRecipes)
-        .values({ userId: data.user_id, recipeId: existing[0].id })
-        .onConflictDoNothing();
+      await saveUserRecipe(data.user_id, existing[0].id);
       console.log(`  -> Already exists, added mapping for user ${data.user_id}`);
     } else {
       console.log(`  -> Already exists, returning cached`);
@@ -823,10 +831,7 @@ app.post("/recipes", async (req, res) => {
 
   // Add user-recipe mapping
   if (data.user_id) {
-    await db
-      .insert(userRecipes)
-      .values({ userId: data.user_id, recipeId: result[0].id })
-      .onConflictDoNothing();
+    await saveUserRecipe(data.user_id, result[0].id);
   }
 
   console.log(`  -> Saved: ${result[0].title} (thumbnail: ${thumbnailUrl ? "YES" : "NO"})`);
@@ -1026,6 +1031,7 @@ app.get("/ingredients", async (_req, res) => {
     default_unit: r.defaultUnit,
     density_g_ml: r.densityGMl,
     gram_per_adet: r.gramPerAdet,
+    alternative_ids: r.alternativeIds,
   })));
 });
 
@@ -1114,6 +1120,54 @@ app.post("/ingredients/classify", async (_req, res) => {
   } catch (err: any) {
     console.error("[Classify]", err.message || err);
     res.status(500).json({ error: "Classification failed", detail: err.message });
+  }
+});
+
+// Find and populate alternative ingredients using Claude
+app.post("/ingredients/find-alternatives", async (_req, res) => {
+  try {
+    const all = await db.select({ id: ingredients.id, name: ingredients.name }).from(ingredients).orderBy(ingredients.name);
+    const names = all.map((r) => r.name);
+    const nameToId = new Map(all.map((r) => [r.name.toLowerCase(), r.id]));
+
+    console.log(`[Alternatives] Sending ${names.length} ingredients to Claude...`);
+
+    // Process in batches of 200 to avoid token limits
+    const batchSize = 200;
+    const allResults: { name: string; alternatives: string[] }[] = [];
+    for (let i = 0; i < names.length; i += batchSize) {
+      const batch = names.slice(i, i + batchSize);
+      const results = await findAlternativeIngredients(batch);
+      allResults.push(...results);
+    }
+
+    // Build a map: ingredient ID → set of alternative IDs (one-way)
+    const altMap = new Map<string, Set<string>>();
+    for (const item of allResults) {
+      const id = nameToId.get(item.name.toLowerCase());
+      if (!id) continue;
+
+      if (!altMap.has(id)) altMap.set(id, new Set());
+      for (const altName of item.alternatives) {
+        const altId = nameToId.get(altName.toLowerCase());
+        if (altId && altId !== id) {
+          altMap.get(id)!.add(altId);
+        }
+      }
+    }
+
+    // Update DB
+    let updated = 0;
+    for (const [id, altIds] of altMap) {
+      await db.update(ingredients).set({ alternativeIds: [...altIds] }).where(eq(ingredients.id, id));
+      updated++;
+    }
+
+    console.log(`[Alternatives] Updated ${updated} ingredients with alternatives`);
+    res.json({ updated, total: all.length });
+  } catch (err: any) {
+    console.error("[Alternatives]", err.message || err);
+    res.status(500).json({ error: "Finding alternatives failed", detail: err.message });
   }
 });
 
@@ -1889,10 +1943,7 @@ app.get("/users/:userId/meal-plans", async (req, res) => {
                 })
                 .returning();
               titleToId[title] = created.id;
-              await db
-                .insert(userRecipes)
-                .values({ userId: req.params.userId, recipeId: created.id })
-                .onConflictDoNothing();
+              await saveUserRecipe(req.params.userId, created.id);
             }
           }
         }
@@ -2127,12 +2178,51 @@ app.get("/users/:userId/shopping-list", async (req, res) => {
       availability: ingredients.availability,
       is_checked: userShoppingList.isChecked,
       added_at: userShoppingList.addedAt,
+      alternative_ids: ingredients.alternativeIds,
     })
     .from(userShoppingList)
     .innerJoin(ingredients, eq(userShoppingList.ingredientId, ingredients.id))
     .where(eq(userShoppingList.userId, req.params.userId))
     .orderBy(desc(userShoppingList.addedAt));
-  res.json(rows);
+
+  // Check which shopping list items have alternatives in the user's pantry
+  const pantryRows = await db
+    .select({ ingredientId: userPantry.ingredientId })
+    .from(userPantry)
+    .where(eq(userPantry.userId, req.params.userId));
+  const pantryIds = new Set(pantryRows.map((r) => r.ingredientId));
+
+  // Collect all alternative IDs we need to resolve names for
+  const altIdsToResolve = new Set<string>();
+  for (const row of rows) {
+    for (const altId of (row.alternative_ids as string[]) ?? []) {
+      if (pantryIds.has(altId)) altIdsToResolve.add(altId);
+    }
+  }
+
+  // Fetch names for matched alternatives
+  const altNames = new Map<string, string>();
+  if (altIdsToResolve.size > 0) {
+    const altRows = await db
+      .select({ id: ingredients.id, name: ingredients.name })
+      .from(ingredients)
+      .where(inArray(ingredients.id, [...altIdsToResolve]));
+    for (const r of altRows) altNames.set(r.id, r.name);
+  }
+
+  res.json(rows.map((r) => {
+    const pantryAlt = ((r.alternative_ids as string[]) ?? []).find((id) => pantryIds.has(id));
+    return {
+      id: r.id,
+      ingredient_id: r.ingredient_id,
+      ingredient_name: r.ingredient_name,
+      price_tier: r.price_tier,
+      availability: r.availability,
+      is_checked: r.is_checked,
+      added_at: r.added_at,
+      pantry_alternative: pantryAlt ? altNames.get(pantryAlt) ?? null : null,
+    };
+  }));
 });
 
 app.post("/users/:userId/shopping-list", async (req, res) => {
@@ -2538,7 +2628,7 @@ app.post("/ai/meal-plan", async (req, res) => {
           .onConflictDoNothing();
         for (const r of created) {
           try {
-            await db.insert(userRecipes).values({ userId: req.body.user_id, recipeId: r.id });
+            await saveUserRecipe(req.body.user_id, r.id);
           } catch { /* ignore duplicates */ }
         }
       }
@@ -2603,10 +2693,7 @@ app.post("/admin/share-recipes", async (req, res) => {
   let created = 0;
   for (const user of targetUsers) {
     for (const recipeId of recipeIds) {
-      await db
-        .insert(userRecipes)
-        .values({ userId: user.clerkId, recipeId })
-        .onConflictDoNothing();
+      await saveUserRecipe(user.clerkId, recipeId);
       created++;
     }
   }
@@ -2628,10 +2715,7 @@ app.post("/admin/map-all-recipes", async (_req, res) => {
   let created = 0;
   for (const user of allUsers) {
     for (const recipe of allRecipes) {
-      await db
-        .insert(userRecipes)
-        .values({ userId: user.clerkId, recipeId: recipe.id })
-        .onConflictDoNothing();
+      await saveUserRecipe(user.clerkId, recipe.id);
       created++;
     }
   }

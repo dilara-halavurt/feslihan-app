@@ -15,6 +15,20 @@
       "when": 1781272798406,
       "tag": "0001_loud_whirlwind",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781783542922,
+      "tag": "0002_harsh_talisman",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781785295434,
+      "tag": "0003_superb_songbird",
+      "breakpoints": true
     }
   ]
 }

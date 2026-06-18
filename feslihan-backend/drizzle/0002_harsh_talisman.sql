@@ -1,0 +1,2 @@
+ALTER TABLE "ingredients" ADD COLUMN "alternative_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "meal_plans" ADD COLUMN "shopping_ingredient_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;

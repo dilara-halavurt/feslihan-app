@@ -427,6 +427,7 @@ struct RecipeDTO: Codable {
     var user_id: String?
     var folder_id: String?
     var is_favorite: Bool?
+    var save_count: Int?
 }
 
 extension RecipeDTO {
@@ -507,7 +508,8 @@ extension RecipeDTO {
             platformUser: platform_user,
             platform: platform,
             folderId: folder_id,
-            freezerFriendly: freezer_friendly ?? false
+            freezerFriendly: freezer_friendly ?? false,
+            saveCount: save_count ?? 0
         )
     }
 
@@ -565,6 +567,7 @@ struct ShoppingItemDTO: Codable, Identifiable {
     let availability: String?
     let is_checked: Bool
     let added_at: String
+    let pantry_alternative: String?
 }
 
 struct ScrapedRecipeIngredient: Codable {

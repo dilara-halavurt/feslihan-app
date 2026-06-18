@@ -1,0 +1,1 @@
+ALTER TABLE "recipes" ADD COLUMN "save_count" integer DEFAULT 0 NOT NULL;

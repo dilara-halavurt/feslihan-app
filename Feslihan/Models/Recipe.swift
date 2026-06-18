@@ -26,6 +26,7 @@ final class Recipe {
     var folderId: String?
     var freezerFriendly: Bool?
     var isFavorite: Bool = false
+    var saveCount: Int = 0
     var createdAt: Date
 
     init(
@@ -50,7 +51,8 @@ final class Recipe {
         platform: String? = nil,
         folderId: String? = nil,
         freezerFriendly: Bool? = nil,
-        isFavorite: Bool = false
+        isFavorite: Bool = false,
+        saveCount: Int = 0
     ) {
         self.id = UUID()
         self.title = title
@@ -75,6 +77,7 @@ final class Recipe {
         self.folderId = folderId
         self.freezerFriendly = freezerFriendly
         self.isFavorite = isFavorite
+        self.saveCount = saveCount
         self.createdAt = Date()
     }
 }
