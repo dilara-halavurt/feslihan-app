@@ -19,6 +19,7 @@ struct RecipeListView: View {
     @State private var filters = RecipeFilters()
     @State private var showFilterSheet = false
     @State private var ingredientPriceTiers: [String: String] = [:]
+    @State private var allIngredientNames: [String] = []
     @State private var triedRecipeIds: Set<String> = []
     @State private var showTriedOnly = false
     @State private var showFavoritesOnly = false
@@ -75,7 +76,8 @@ struct RecipeListView: View {
     private func matchesFilters(_ recipe: Recipe) -> Bool {
         if !filters.tags.isEmpty {
             let recipeTags = Set(recipe.tags.map { $0.lowercased() })
-            if recipeTags.isDisjoint(with: filters.tags.map { $0.lowercased() }) {
+            let selected = filters.tags.map { $0.lowercased() }
+            if !selected.allSatisfy({ recipeTags.contains($0) }) {
                 return false
             }
         }
@@ -103,13 +105,21 @@ struct RecipeListView: View {
                 return false
             }
         }
-        if !filters.ingredients.isEmpty {
+        if !filters.ingredients.isEmpty || !filters.excludedIngredients.isEmpty {
             let recipeIngs = Set(recipe.ingredients.map {
                 ($0.baseName ?? $0.name).lowercased()
             })
-            let selected = filters.ingredients.map { $0.lowercased() }
-            if !selected.allSatisfy({ recipeIngs.contains($0) }) {
-                return false
+            if !filters.ingredients.isEmpty {
+                let included = filters.ingredients.map { $0.lowercased() }
+                if !included.allSatisfy({ recipeIngs.contains($0) }) {
+                    return false
+                }
+            }
+            if !filters.excludedIngredients.isEmpty {
+                let excluded = filters.excludedIngredients.map { $0.lowercased() }
+                if excluded.contains(where: { recipeIngs.contains($0) }) {
+                    return false
+                }
             }
         }
         return true
@@ -136,7 +146,7 @@ struct RecipeListView: View {
     }
 
     private var availableIngredients: [String] {
-        Array(Set(recipes.flatMap { $0.ingredients.map { $0.baseName ?? $0.name } })).sorted()
+        allIngredientNames
     }
 
     private var availableTags: [String] {
@@ -173,7 +183,10 @@ struct RecipeListView: View {
                     ActiveFilterChip(label: label) { filters.priceTiers.remove(tier) }
                 }
                 ForEach(filters.ingredients.sorted(), id: \.self) { ingredient in
-                    ActiveFilterChip(label: ingredient) { filters.ingredients.remove(ingredient) }
+                    ActiveFilterChip(label: "+ \(ingredient)") { filters.ingredients.remove(ingredient) }
+                }
+                ForEach(filters.excludedIngredients.sorted(), id: \.self) { ingredient in
+                    ActiveFilterChip(label: "− \(ingredient)", color: DS.terracotta) { filters.excludedIngredients.remove(ingredient) }
                 }
 
                 Button {
@@ -278,9 +291,9 @@ struct RecipeListView: View {
                 AddToPlanSheet(info: info)
             }
             .task {
+                await loadIngredientPriceTiers()
                 await syncFromBackend()
                 await loadFolders()
-                await loadIngredientPriceTiers()
                 await loadTriedRecipes()
             }
             .onAppear {
@@ -713,6 +726,7 @@ struct RecipeListView: View {
 
     private func loadIngredientPriceTiers() async {
         let allIngredients = await APIService.fetchIngredients()
+        print("[Filter] Loaded \(allIngredients.count) ingredients from API")
         var tiers: [String: String] = [:]
         for dto in allIngredients {
             if let tier = dto.price_tier {
@@ -720,6 +734,7 @@ struct RecipeListView: View {
             }
         }
         ingredientPriceTiers = tiers
+        allIngredientNames = allIngredients.map { $0.name }.sorted()
     }
 
     private func loadTriedRecipes() async {
@@ -1028,6 +1043,7 @@ struct RecipeFilters: Equatable {
     var cookingTimeRange: CookingTimeRange? = nil
     var priceTiers: Set<String> = []
     var ingredients: Set<String> = []
+    var excludedIngredients: Set<String> = []
 
     var activeCount: Int {
         var count = 0
@@ -1036,7 +1052,7 @@ struct RecipeFilters: Equatable {
         if !difficulties.isEmpty { count += 1 }
         if cookingTimeRange != nil { count += 1 }
         if !priceTiers.isEmpty { count += 1 }
-        if !ingredients.isEmpty { count += 1 }
+        if !ingredients.isEmpty || !excludedIngredients.isEmpty { count += 1 }
         return count
     }
 
@@ -1049,6 +1065,7 @@ struct RecipeFilters: Equatable {
         cookingTimeRange = nil
         priceTiers = []
         ingredients = []
+        excludedIngredients = []
     }
 }
 
@@ -1100,14 +1117,38 @@ struct RecipeFilterSheet: View {
     let availableIngredients: [String]
     let matchingCount: Int
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedTab = 0
     @State private var ingredientSearch = ""
+
+    private enum IngredientState {
+        case none, included, excluded
+    }
+
+    private func ingredientState(_ name: String) -> IngredientState {
+        if filters.ingredients.contains(name) { return .included }
+        if filters.excludedIngredients.contains(name) { return .excluded }
+        return .none
+    }
+
+    private func cycleIngredient(_ name: String) {
+        switch ingredientState(name) {
+        case .none:
+            filters.ingredients.insert(name)
+        case .included:
+            filters.ingredients.remove(name)
+            filters.excludedIngredients.insert(name)
+        case .excluded:
+            filters.excludedIngredients.remove(name)
+        }
+    }
 
     private var filteredIngredients: [String] {
         if ingredientSearch.isEmpty {
-            // Show selected ones first, then top ingredients
-            let selected = availableIngredients.filter { filters.ingredients.contains($0) }
-            let rest = availableIngredients.filter { !filters.ingredients.contains($0) }
-            return selected + Array(rest.prefix(20))
+            // Show included first, then excluded, then unselected (limited)
+            let included = availableIngredients.filter { ingredientState($0) == .included }
+            let excluded = availableIngredients.filter { ingredientState($0) == .excluded }
+            let unselected = availableIngredients.filter { ingredientState($0) == .none }
+            return included + excluded + Array(unselected.prefix(30))
         }
         return availableIngredients.filter {
             $0.localizedCaseInsensitiveContains(ingredientSearch)
@@ -1117,144 +1158,38 @@ struct RecipeFilterSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    // Ingredient filter
-                    if !availableIngredients.isEmpty {
-                        FilterSection(title: "Malzeme", selectedCount: filters.ingredients.count) {
-                            VStack(spacing: 10) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "magnifyingglass")
-                                        .font(.system(size: 14))
-                                        .foregroundStyle(DS.dust)
-                                    TextField("Malzeme ara...", text: $ingredientSearch)
-                                        .font(.system(size: 14))
-                                        .foregroundStyle(DS.ink)
-                                }
-                                .padding(10)
-                                .background(DS.sand)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                                FilterChipGrid(
-                                    items: filteredIngredients,
-                                    isSelected: { filters.ingredients.contains($0) },
-                                    toggle: { ingredient in
-                                        if filters.ingredients.contains(ingredient) {
-                                            filters.ingredients.remove(ingredient)
-                                        } else {
-                                            filters.ingredients.insert(ingredient)
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    if !availableTags.isEmpty {
-                        FilterSection(title: "Etiket", selectedCount: filters.tags.count) {
-                            FilterChipGrid(
-                                items: availableTags,
-                                isSelected: { filters.tags.contains($0) },
-                                toggle: { tag in
-                                    if filters.tags.contains(tag) {
-                                        filters.tags.remove(tag)
-                                    } else {
-                                        filters.tags.insert(tag)
-                                    }
-                                }
-                            )
-                        }
-                    }
-
-                    if !availableCuisines.isEmpty {
-                        FilterSection(title: "Mutfak", selectedCount: filters.cuisines.count) {
-                            FilterChipGrid(
-                                items: availableCuisines,
-                                isSelected: { filters.cuisines.contains($0) },
-                                toggle: { cuisine in
-                                    if filters.cuisines.contains(cuisine) {
-                                        filters.cuisines.remove(cuisine)
-                                    } else {
-                                        filters.cuisines.insert(cuisine)
-                                    }
-                                }
-                            )
-                        }
-                    }
-
-                    FilterSection(title: "Zorluk", selectedCount: filters.difficulties.count) {
-                        FilterChipGrid(
-                            items: difficultyOptions.map { $0.label },
-                            isSelected: { label in
-                                guard let value = difficultyOptions.first(where: { $0.label == label })?.value else { return false }
-                                return filters.difficulties.contains(value)
-                            },
-                            toggle: { label in
-                                guard let value = difficultyOptions.first(where: { $0.label == label })?.value else { return }
-                                if filters.difficulties.contains(value) {
-                                    filters.difficulties.remove(value)
-                                } else {
-                                    filters.difficulties.insert(value)
-                                }
-                            }
-                        )
-                    }
-
-                    FilterSection(title: "Pişirme Süresi", selectedCount: filters.cookingTimeRange == nil ? 0 : 1) {
-                        FilterChipGrid(
-                            items: CookingTimeRange.allCases.map { $0.label },
-                            isSelected: { label in
-                                filters.cookingTimeRange?.label == label
-                            },
-                            toggle: { label in
-                                let range = CookingTimeRange.allCases.first { $0.label == label }
-                                if filters.cookingTimeRange == range {
-                                    filters.cookingTimeRange = nil
-                                } else {
-                                    filters.cookingTimeRange = range
-                                }
-                            }
-                        )
-                    }
-
-                    FilterSection(title: "Fiyat", selectedCount: filters.priceTiers.count) {
-                        FilterChipGrid(
-                            items: priceTierOptions.map { $0.label },
-                            isSelected: { label in
-                                guard let value = priceTierOptions.first(where: { $0.label == label })?.value else { return false }
-                                return filters.priceTiers.contains(value)
-                            },
-                            toggle: { label in
-                                guard let value = priceTierOptions.first(where: { $0.label == label })?.value else { return }
-                                if filters.priceTiers.contains(value) {
-                                    filters.priceTiers.remove(value)
-                                } else {
-                                    filters.priceTiers.insert(value)
-                                }
-                            }
-                        )
-                    }
+                // Tab selector
+                HStack(spacing: 0) {
+                    filterTab("Malzeme (dahil / hariç)", index: 0)
+                    filterTab("Etiket, Mutfak, Zorlu...", index: 1)
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 20)
-            }
+                .padding(.top, 8)
 
-            Button {
-                dismiss()
-            } label: {
-                Text(applyButtonLabel)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(DS.ember)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 16)
-            .background(DS.cream)
+                ScrollView {
+                    if selectedTab == 0 {
+                        ingredientFilterPage
+                    } else {
+                        otherFiltersPage
+                    }
+                }
+
+                Button {
+                    dismiss()
+                } label: {
+                    Text(applyButtonLabel)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(DS.ember)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 16)
+                .background(DS.cream)
             }
             .background(DS.cream)
             .navigationTitle("Filtrele")
@@ -1269,6 +1204,183 @@ struct RecipeFilterSheet: View {
                 }
             }
         }
+    }
+
+    // MARK: - Tab Button
+
+    private func filterTab(_ title: String, index: Int) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { selectedTab = index }
+        } label: {
+            VStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 13, weight: selectedTab == index ? .semibold : .medium, design: .rounded))
+                    .foregroundStyle(selectedTab == index ? DS.ink : DS.dust)
+                    .lineLimit(1)
+                Rectangle()
+                    .fill(selectedTab == index ? DS.ember : .clear)
+                    .frame(height: 2)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Ingredient Filter Page
+
+    private var ingredientFilterPage: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            // Search bar
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 14))
+                    .foregroundStyle(DS.dust)
+                TextField("Malzeme ara...", text: $ingredientSearch)
+                    .font(.system(size: 14))
+                    .foregroundStyle(DS.ink)
+            }
+            .padding(10)
+            .background(DS.sand)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            // Legend
+            HStack(spacing: 16) {
+                HStack(spacing: 4) {
+                    Circle().fill(DS.ember).frame(width: 8, height: 8)
+                    Text("dokun → eklensin")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(DS.smoke)
+                }
+                HStack(spacing: 4) {
+                    Circle().fill(DS.terracotta).frame(width: 8, height: 8)
+                    Text("tekrar dokun → çıkar")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(DS.smoke)
+                }
+            }
+
+            // Ingredient chips
+            FlexibleHStack(spacing: 8) {
+                ForEach(filteredIngredients, id: \.self) { name in
+                    let state = ingredientState(name)
+                    Button {
+                        cycleIngredient(name)
+                    } label: {
+                        HStack(spacing: 4) {
+                            if state == .included {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 10, weight: .bold))
+                            } else if state == .excluded {
+                                Image(systemName: "minus")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            Text(name)
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundStyle(state == .none ? DS.ink : .white)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(state == .included ? DS.ember : state == .excluded ? DS.terracotta : DS.sand)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 20)
+    }
+
+    // MARK: - Other Filters Page
+
+    private var otherFiltersPage: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            if !availableTags.isEmpty {
+                FilterSection(title: "Etiket", selectedCount: filters.tags.count) {
+                    FilterChipGrid(
+                        items: availableTags,
+                        isSelected: { filters.tags.contains($0) },
+                        toggle: { tag in
+                            if filters.tags.contains(tag) {
+                                filters.tags.remove(tag)
+                            } else {
+                                filters.tags.insert(tag)
+                            }
+                        }
+                    )
+                }
+            }
+
+            if !availableCuisines.isEmpty {
+                FilterSection(title: "Mutfak", selectedCount: filters.cuisines.count) {
+                    FilterChipGrid(
+                        items: availableCuisines,
+                        isSelected: { filters.cuisines.contains($0) },
+                        toggle: { cuisine in
+                            if filters.cuisines.contains(cuisine) {
+                                filters.cuisines.remove(cuisine)
+                            } else {
+                                filters.cuisines.insert(cuisine)
+                            }
+                        }
+                    )
+                }
+            }
+
+            FilterSection(title: "Zorluk", selectedCount: filters.difficulties.count) {
+                FilterChipGrid(
+                    items: difficultyOptions.map { $0.label },
+                    isSelected: { label in
+                        guard let value = difficultyOptions.first(where: { $0.label == label })?.value else { return false }
+                        return filters.difficulties.contains(value)
+                    },
+                    toggle: { label in
+                        guard let value = difficultyOptions.first(where: { $0.label == label })?.value else { return }
+                        if filters.difficulties.contains(value) {
+                            filters.difficulties.remove(value)
+                        } else {
+                            filters.difficulties.insert(value)
+                        }
+                    }
+                )
+            }
+
+            FilterSection(title: "Pişirme Süresi", selectedCount: filters.cookingTimeRange == nil ? 0 : 1) {
+                FilterChipGrid(
+                    items: CookingTimeRange.allCases.map { $0.label },
+                    isSelected: { label in
+                        filters.cookingTimeRange?.label == label
+                    },
+                    toggle: { label in
+                        let range = CookingTimeRange.allCases.first { $0.label == label }
+                        if filters.cookingTimeRange == range {
+                            filters.cookingTimeRange = nil
+                        } else {
+                            filters.cookingTimeRange = range
+                        }
+                    }
+                )
+            }
+
+            FilterSection(title: "Fiyat", selectedCount: filters.priceTiers.count) {
+                FilterChipGrid(
+                    items: priceTierOptions.map { $0.label },
+                    isSelected: { label in
+                        guard let value = priceTierOptions.first(where: { $0.label == label })?.value else { return false }
+                        return filters.priceTiers.contains(value)
+                    },
+                    toggle: { label in
+                        guard let value = priceTierOptions.first(where: { $0.label == label })?.value else { return }
+                        if filters.priceTiers.contains(value) {
+                            filters.priceTiers.remove(value)
+                        } else {
+                            filters.priceTiers.insert(value)
+                        }
+                    }
+                )
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 20)
     }
 
     private var applyButtonLabel: String {
@@ -1310,6 +1422,7 @@ private struct FilterSection<Content: View>: View {
 
 private struct ActiveFilterChip: View {
     let label: String
+    var color: Color = DS.ember
     let onRemove: () -> Void
 
     var body: some View {
@@ -1323,7 +1436,7 @@ private struct ActiveFilterChip: View {
             .foregroundStyle(.white)
             .padding(.vertical, 6)
             .padding(.horizontal, 10)
-            .background(DS.ember)
+            .background(color)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)

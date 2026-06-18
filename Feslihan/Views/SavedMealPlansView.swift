@@ -154,7 +154,11 @@ struct SavedPlanItem: Identifiable, Codable {
     }
 
     var peopleCount: String {
-        // Parse from name like "Haftalık - 2 Kişi"
+        // Check plan data first (manual plans store this)
+        if let pc = plan.people_count, !pc.isEmpty {
+            return pc
+        }
+        // Fallback: parse from name like "Haftalık - 2 Kişi"
         if let match = name.range(of: #"(\d+\+?)\s*[Kk]işi"#, options: .regularExpression) {
             let sub = name[match]
             if let numMatch = sub.range(of: #"\d+\+?"#, options: .regularExpression) {
@@ -169,6 +173,7 @@ struct SavedPlanData: Codable {
     let days: [SavedPlanDay]?
     let shopping_list: [ShoppingListItem]?  // Legacy: old plans stored this inside plan JSON
     let avg_calories_per_day: Int?
+    let people_count: String?
 }
 
 struct SavedPlanDay: Codable {

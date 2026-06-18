@@ -40,22 +40,8 @@ struct RecipeDetailView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         // Recipe owner
                         if let username = recipe.platformUser, !username.isEmpty {
-                            Button {
-                                let profileURL: String
-                                switch recipe.platform {
-                                case "tiktok":
-                                    profileURL = "https://www.tiktok.com/@\(username)"
-                                case "x":
-                                    profileURL = "https://x.com/\(username)"
-                                case "nefisyemektarifleri":
-                                    profileURL = "https://www.nefisyemektarifleri.com/u/\(username)/tarifler/"
-                                default:
-                                    profileURL = "https://www.instagram.com/\(username)/"
-                                }
-                                if let url = URL(string: profileURL) {
-                                    UIApplication.shared.open(url)
-                                }
-                            } label: {
+                            if username == "feslihan" {
+                                // Platform recipe — show Feslihan branding, no external link
                                 HStack(spacing: 10) {
                                     if let picData = profilePicData,
                                        let uiImg = UIImage(data: picData) {
@@ -65,31 +51,77 @@ struct RecipeDetailView: View {
                                             .frame(width: 36, height: 36)
                                             .clipShape(Circle())
                                     } else {
-                                        Image(systemName: "person.circle.fill")
+                                        Image(systemName: "leaf.circle.fill")
                                             .font(.system(size: 36))
-                                            .foregroundStyle(DS.dust)
+                                            .foregroundStyle(DS.ember)
                                     }
 
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text("@\(username)")
+                                        Text("Feslihan")
                                             .font(.system(size: 15, weight: .semibold))
                                             .foregroundStyle(DS.ink)
-                                        if let platform = recipe.platform {
-                                            Text(platformDisplayName(platform))
-                                                .font(.system(size: 12, weight: .medium))
-                                                .foregroundStyle(DS.smoke)
-                                        }
+                                        Text("Platform Tarifi")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(DS.smoke)
                                     }
 
                                     Spacer()
-
-                                    Image(systemName: "arrow.up.right")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(DS.dust)
                                 }
                                 .padding(12)
                                 .background(DS.sand)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                            } else {
+                                Button {
+                                    let profileURL: String
+                                    switch recipe.platform {
+                                    case "tiktok":
+                                        profileURL = "https://www.tiktok.com/@\(username)"
+                                    case "x":
+                                        profileURL = "https://x.com/\(username)"
+                                    case "nefisyemektarifleri":
+                                        profileURL = "https://www.nefisyemektarifleri.com/u/\(username)/tarifler/"
+                                    default:
+                                        profileURL = "https://www.instagram.com/\(username)/"
+                                    }
+                                    if let url = URL(string: profileURL) {
+                                        UIApplication.shared.open(url)
+                                    }
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        if let picData = profilePicData,
+                                           let uiImg = UIImage(data: picData) {
+                                            Image(uiImage: uiImg)
+                                                .resizable()
+                                                .aspectRatio(contentMode: .fill)
+                                                .frame(width: 36, height: 36)
+                                                .clipShape(Circle())
+                                        } else {
+                                            Image(systemName: "person.circle.fill")
+                                                .font(.system(size: 36))
+                                                .foregroundStyle(DS.dust)
+                                        }
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("@\(username)")
+                                                .font(.system(size: 15, weight: .semibold))
+                                                .foregroundStyle(DS.ink)
+                                            if let platform = recipe.platform {
+                                                Text(platformDisplayName(platform))
+                                                    .font(.system(size: 12, weight: .medium))
+                                                    .foregroundStyle(DS.smoke)
+                                            }
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "arrow.up.right")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(DS.dust)
+                                    }
+                                    .padding(12)
+                                    .background(DS.sand)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                }
                             }
                         }
 
@@ -179,7 +211,7 @@ struct RecipeDetailView: View {
                         .shadow(color: DS.shadowButton, radius: 8, y: 4)
                     }
 
-                    if recipe.sourceURL != nil {
+                    if let src = recipe.sourceURL, src.hasPrefix("http") {
                         Button { openVideo() } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "play.fill")

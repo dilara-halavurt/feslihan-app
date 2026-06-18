@@ -1070,6 +1070,7 @@ private struct BudgetStepView: View {
 
 private struct ManualMealPlanBuilder: View {
     @State private var planName = ""
+    @State private var peopleCount: PeopleCount = .two
     @State private var dayCount = 7
     @State private var days: [MealPlanDay] = []
     @State private var userRecipes: [RecipeDTO] = []
@@ -1090,7 +1091,7 @@ private struct ManualMealPlanBuilder: View {
 
     private var avgCaloriesPerDay: Int? {
         let cals = days.flatMap { $0.meals }.flatMap { meal in
-            meal.recipeIds.compactMap { recipeById[$0]?.calories_total_kcal }
+            meal.recipeIds.compactMap { recipeById[$0]?.calories_per_serving_kcal }
         }
         guard !cals.isEmpty, !days.isEmpty else { return nil }
         return Int(cals.reduce(0, +) / Double(days.count))
@@ -1177,6 +1178,39 @@ private struct ManualMealPlanBuilder: View {
                                     RoundedRectangle(cornerRadius: 10)
                                         .stroke(DS.stone, lineWidth: 1)
                                 )
+                        }
+                        .padding(.horizontal, 20)
+
+                        // People count picker
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Kişi Sayısı")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundStyle(DS.smoke)
+                            HStack(spacing: 8) {
+                                ForEach(PeopleCount.allCases, id: \.self) { count in
+                                    Button {
+                                        withAnimation(.spring(response: 0.2)) {
+                                            peopleCount = count
+                                        }
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: count.icon)
+                                                .font(.system(size: 12))
+                                            Text(count.rawValue)
+                                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .foregroundStyle(peopleCount == count ? .white : DS.ink)
+                                        .background(peopleCount == count ? DS.ember : DS.flour)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .stroke(peopleCount == count ? DS.ember : DS.stone, lineWidth: 1)
+                                        )
+                                    }
+                                }
+                            }
                         }
                         .padding(.horizontal, 20)
 
@@ -1380,7 +1414,7 @@ private struct ManualMealPlanBuilder: View {
             guard let userId = Clerk.shared.user?.id,
                   let url = URL(string: "\(APIService.baseURL)/meal-plans") else { return }
 
-            let name = planName.isEmpty ? "Manuel Plan - \(dayCount) Gün" : planName
+            let name = planName.isEmpty ? "Manuel Plan - \(dayCount) Gün - \(peopleCount.rawValue)" : planName
 
             let planData: [String: Any] = [
                 "days": days.map { day in
@@ -1394,7 +1428,8 @@ private struct ManualMealPlanBuilder: View {
                         }
                     ] as [String: Any]
                 },
-                "avg_calories_per_day": avgCaloriesPerDay ?? 0
+                "avg_calories_per_day": avgCaloriesPerDay ?? 0,
+                "people_count": peopleCount.apiValue
             ]
 
             let shoppingListDicts = aggregatedShoppingList.map { item -> [String: String] in
