@@ -13,6 +13,8 @@ struct RootView: View {
                     await syncUserToBackend(user)
                     SubscriptionService.shared.setUser(user.id)
                     await SubscriptionService.shared.refreshStatus()
+                    // Backfill missing creator profile pictures from this device
+                    await APIService.backfillCreatorPictures()
                 }
         } else {
             ZStack {

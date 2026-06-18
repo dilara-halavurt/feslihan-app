@@ -6,6 +6,7 @@ import { recipes, ingredients, tags, platformCreators, userRecipes, userFolders,
 import { uploadImage, s3KeyFromUrl, getImage } from "./s3.js";
 import { analyzeRecipe, analyzeNutrition, generateMealPlan, classifyIngredients, classifyFreezerFriendly, findAlternativeIngredients } from "./ai.js";
 import { eq, desc, inArray, and, sql, isNull } from "drizzle-orm";
+import { seedPlatformRecipes, mapPlatformRecipesToUser } from "./seed-recipes.js";
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
@@ -976,15 +977,25 @@ app.post("/users/sync", async (req, res) => {
     .where(eq(users.clerkId, clerk_id))
     .limit(1);
 
-  if (existing.length > 0) {
+  const isNewUser = existing.length === 0;
+
+  if (isNewUser) {
+    await db
+      .insert(users)
+      .values({ clerkId: clerk_id, email, name, avatarUrl: avatar_url });
+  } else {
     await db
       .update(users)
       .set({ email, name, avatarUrl: avatar_url })
       .where(eq(users.clerkId, clerk_id));
-  } else {
-    await db
-      .insert(users)
-      .values({ clerkId: clerk_id, email, name, avatarUrl: avatar_url });
+  }
+
+  // Map platform recipes to new users so they start with content
+  if (isNewUser) {
+    const mapped = await mapPlatformRecipesToUser(clerk_id);
+    if (mapped > 0) {
+      console.log(`[Sync] Mapped ${mapped} platform recipes to new user ${clerk_id}`);
+    }
   }
 
   res.json({ ok: true });
@@ -2740,6 +2751,44 @@ app.post("/admin/fill-creator-pictures", async (_req, res) => {
   res.json({ total: creators.length, filled, failed });
 });
 
+// Map platform recipes to all existing users (retroactive)
+app.post("/admin/map-platform-recipes", async (_req, res) => {
+  const allUsers = await db.select({ clerkId: users.clerkId }).from(users);
+  let totalMapped = 0;
+  for (const user of allUsers) {
+    const mapped = await mapPlatformRecipesToUser(user.clerkId);
+    totalMapped += mapped;
+  }
+  console.log(`[Admin] Mapped platform recipes to ${allUsers.length} users (${totalMapped} new mappings)`);
+  res.json({ users_count: allUsers.length, mappings_created: totalMapped });
+});
+
+// Get Instagram creators missing profile pictures (for client-side backfill)
+app.get("/creators/missing-pictures", async (_req, res) => {
+  const creators = await db
+    .select({ username: platformCreators.username, platform: platformCreators.platform })
+    .from(platformCreators)
+    .where(isNull(platformCreators.profilePictureUrl));
+  res.json(creators);
+});
+
+// Upload a profile picture for a creator (called by iOS client during backfill)
+app.put("/creators/:username/picture", async (req, res) => {
+  const { base64 } = req.body;
+  if (!base64) { res.status(400).json({ error: "base64 required" }); return; }
+
+  const username = req.params.username.toLowerCase();
+  try {
+    const url = await uploadImage(base64);
+    await db.update(platformCreators)
+      .set({ profilePictureUrl: url })
+      .where(eq(platformCreators.username, username));
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Seed predefined tags on startup
 async function seedTags() {
   const existing = await db.select({ name: tags.name }).from(tags);
@@ -2882,5 +2931,6 @@ app.post("/admin/clean-ingredient-names", async (req, res) => {
 
 app.listen(PORT, async () => {
   await seedTags();
+  await seedPlatformRecipes();
   console.log(`Feslihan API running on http://localhost:${PORT}`);
 });

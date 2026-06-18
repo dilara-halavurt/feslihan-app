@@ -310,6 +310,39 @@ enum APIService {
 
         return try? JSONDecoder().decode(InstagramUserDTO.self, from: data)
     }
+
+    /// Backfill missing creator profile pictures from this device.
+    static func backfillCreatorPictures() async {
+        guard let url = URL(string: "\(baseURL)/creators/missing-pictures") else { return }
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let creators = try? JSONDecoder().decode([MissingPicCreator].self, from: data),
+              !creators.isEmpty else { return }
+
+        print("[Backfill] \(creators.count) creators missing profile pictures")
+        var filled = 0
+        for creator in creators {
+            guard creator.platform == "instagram" else { continue }
+            guard let picData = await CaptionService.fetchInstagramProfilePic(username: creator.username) else { continue }
+            guard let uploadURL = URL(string: "\(baseURL)/creators/\(creator.username)/picture") else { continue }
+            var request = URLRequest(url: uploadURL)
+            request.httpMethod = "PUT"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let body: [String: String] = ["base64": picData.base64EncodedString()]
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            if let (_, resp) = try? await URLSession.shared.data(for: request),
+               let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 200 {
+                filled += 1
+                print("[Backfill] Filled @\(creator.username)")
+            }
+        }
+        print("[Backfill] Done: \(filled)/\(creators.count) filled")
+    }
+}
+
+struct MissingPicCreator: Codable {
+    let username: String
+    let platform: String
 }
 
 struct FolderDTO: Codable, Identifiable {
@@ -332,6 +365,7 @@ struct IngredientDTO: Codable, Identifiable {
     let default_unit: String?      // "g", "ml", "adet"
     let density_g_ml: Double?      // grams per ml
     let gram_per_adet: Double?     // grams per 1 piece
+    let alternative_ids: [String]?
 
     var priceTierEmoji: String? {
         switch price_tier {
