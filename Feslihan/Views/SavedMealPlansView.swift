@@ -362,10 +362,13 @@ private struct SavedPlanDetailSheet: View {
                 }
             }
             .sheet(item: $editingMeal) { meal in
-                MealEditSheet(meal: meal, userRecipes: userRecipes, recipeById: recipeById) { updated in
+                MealEditSheet(meal: meal, userRecipes: userRecipes, recipeById: recipeById, onSave: { updated in
                     replaceMeal(meal, with: updated)
                     editingMeal = nil
-                }
+                }, onDelete: {
+                    deleteMeal(meal)
+                    editingMeal = nil
+                })
             }
             .sheet(item: $newMealForDay) { meal in
                 MealEditSheet(meal: meal, userRecipes: userRecipes, recipeById: recipeById) { updated in
@@ -657,6 +660,16 @@ private struct SavedPlanDetailSheet: View {
         for dayIndex in days.indices {
             if let mealIndex = days[dayIndex].meals.firstIndex(where: { $0.id == old.id }) {
                 days[dayIndex].meals[mealIndex] = updated
+                hasChanges = true
+                break
+            }
+        }
+    }
+
+    private func deleteMeal(_ meal: MealPlanMeal) {
+        for dayIndex in days.indices {
+            if let mealIndex = days[dayIndex].meals.firstIndex(where: { $0.id == meal.id }) {
+                days[dayIndex].meals.remove(at: mealIndex)
                 hasChanges = true
                 break
             }
