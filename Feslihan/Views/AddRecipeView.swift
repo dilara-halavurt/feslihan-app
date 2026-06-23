@@ -531,9 +531,14 @@ struct AddRecipeView: View {
 
     private func processVideoRecipe() async throws {
         processingState = .fetchingCaption
-        let captionResult = try await CaptionService.fetchCaption(from: trimmedURL)
-        guard !captionResult.caption.isEmpty else {
-            throw FeslihanError.captionFetchFailed
+        var captionResult: CaptionResult?
+        do {
+            let result = try await CaptionService.fetchCaption(from: trimmedURL)
+            if !result.caption.isEmpty {
+                captionResult = result
+            }
+        } catch {
+            print("[Caption] Fetch failed, will try audio-only: \(error)")
         }
 
         // Try to extract audio from the video for transcription
@@ -549,10 +554,15 @@ struct AddRecipeView: View {
             }
         }
 
+        // Need at least one source of information
+        guard captionResult != nil || audioData != nil else {
+            throw FeslihanError.captionFetchFailed
+        }
+
         processingState = .analyzingRecipe
         let recipe = try await ClaudeService.analyzeRecipe(
             transcription: "",
-            caption: captionResult.caption,
+            caption: captionResult?.caption ?? "",
             audio: audioData
         )
 
@@ -560,14 +570,14 @@ struct AddRecipeView: View {
             processed: recipe,
             url: trimmedURL,
             platform: detectPlatform(),
-            caption: captionResult.caption,
+            caption: captionResult?.caption ?? "",
             requestedBy: Clerk.shared.user?.id ?? "default",
             userId: Clerk.shared.user?.id
         )
-        dto.thumbnail_base64 = captionResult.thumbnailData?.base64EncodedString()
-        dto.creator_profile_pic_base64 = captionResult.authorProfilePicData?.base64EncodedString()
+        dto.thumbnail_base64 = captionResult?.thumbnailData?.base64EncodedString()
+        dto.creator_profile_pic_base64 = captionResult?.authorProfilePicData?.base64EncodedString()
         // Prefer oEmbed author over Claude's extraction
-        if let author = captionResult.authorName, !author.isEmpty {
+        if let author = captionResult?.authorName, !author.isEmpty {
             dto.platform_user = author
         }
         // Fetch profile pic from the device (social platforms block server IPs)

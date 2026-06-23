@@ -100,7 +100,8 @@ enum CaptionService {
             "watch this video on tiktok",
             "watch on the app",
             "join me on tiktok",
-            "paylaştı",
+            "bir gönderi paylaştı",
+            "bir reels paylaştı",
             "bu videoyu paylaştı",
         ]
         return patterns.contains { lower.contains($0) }
