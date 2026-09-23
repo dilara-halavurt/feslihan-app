@@ -90,7 +90,10 @@ jobs:
       - name: Create branch
         run: git checkout -b "${{ steps.story.outputs.branch }}"
 
-      - name: Run Claude Code
+      - name: Install backend dependencies
+        run: cd feslihan-backend && npm install
+
+      - name: Run Claude Code (with build retry)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
@@ -98,14 +101,14 @@ jobs:
           STORY_DESC=$(cat /tmp/story_desc.txt)
           STORY_TASKS=$(cat /tmp/story_tasks.txt)
 
-          PROMPT=$(cat <<'PROMPT_END'
+          BASE_PROMPT=$(cat <<'PROMPT_END'
           You are an autonomous coding agent working on the Feslihan app.
           Implement the following Shortcut story. Read relevant files first to understand the codebase, then make focused changes.
 
           PROMPT_END
           )
 
-          PROMPT="${PROMPT}
+          BASE_PROMPT="${BASE_PROMPT}
           Story: ${STORY_NAME}
           Description: ${STORY_DESC}
           Tasks: ${STORY_TASKS}
@@ -117,9 +120,47 @@ jobs:
           - If this is a backend change, ensure it compiles with 'npx tsc --noEmit'
           - If this is an iOS change, only modify Swift files"
 
-          npx -y @anthropic-ai/claude-code -p "$PROMPT" \
-            --dangerously-skip-permissions \
-            --max-turns 50 || true
+          # How many times to (re-)run Claude Code until the backend build passes.
+          MAX_ATTEMPTS=3
+          PROMPT="$BASE_PROMPT"
+          BUILD_OK=false
+
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            echo "::group::Claude Code attempt ${attempt}/${MAX_ATTEMPTS}"
+            npx -y @anthropic-ai/claude-code -p "$PROMPT" \
+              --dangerously-skip-permissions \
+              --max-turns 50 || true
+            echo "::endgroup::"
+
+            echo "::group::Backend build (tsc) attempt ${attempt}/${MAX_ATTEMPTS}"
+            if (cd feslihan-backend && npx tsc --noEmit) > /tmp/build.log 2>&1; then
+              echo "Build succeeded on attempt ${attempt}"
+              cat /tmp/build.log
+              echo "::endgroup::"
+              BUILD_OK=true
+              break
+            fi
+            echo "Build failed on attempt ${attempt}"
+            cat /tmp/build.log
+            echo "::endgroup::"
+
+            if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+              BUILD_ERRORS=$(cat /tmp/build.log)
+              PROMPT="Your previous changes for this story caused the backend build to fail.
+          Fix the build errors below. Do NOT revert the story implementation — keep the feature and make it compile.
+          Verify by running 'npx tsc --noEmit' inside feslihan-backend.
+
+          Story: ${STORY_NAME}
+
+          Build output (npx tsc --noEmit):
+          ${BUILD_ERRORS}"
+            fi
+          done
+
+          if [ "$BUILD_OK" != "true" ]; then
+            echo "::error::Backend build still failing after ${MAX_ATTEMPTS} attempts"
+            exit 1
+          fi
 
       - name: Check for changes
         id: changes
