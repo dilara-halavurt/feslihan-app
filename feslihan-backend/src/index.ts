@@ -7,6 +7,7 @@ import { uploadImage, s3KeyFromUrl, getImage } from "./s3.js";
 import { analyzeRecipe, analyzeNutrition, generateMealPlan, classifyIngredients, classifyFreezerFriendly, findAlternativeIngredients } from "./ai.js";
 import { eq, desc, inArray, and, sql, isNull } from "drizzle-orm";
 import { seedPlatformRecipes, mapPlatformRecipesToUser } from "./seed-recipes.js";
+import { requireAuth } from "./auth.js";
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
@@ -65,6 +66,10 @@ app.use((req, _res, next) => {
   }
   next();
 });
+
+// Require a verified Clerk session JWT on every request (except public assets).
+// The authenticated user id is derived from the token and exposed via req.auth.
+app.use(requireAuth);
 
 function toSnake(obj: any): any {
   if (Array.isArray(obj)) return obj.map(toSnake);
@@ -719,6 +724,8 @@ app.get("/recipes/lookup", async (req, res) => {
 // Save a new recipe
 app.post("/recipes", async (req, res) => {
   const data = req.body;
+  // Owner of the saved recipe is always the authenticated user.
+  const userId = req.auth!.userId;
 
   // Return existing if URL already saved
   const existing = await db
@@ -729,12 +736,8 @@ app.post("/recipes", async (req, res) => {
 
   if (existing.length > 0) {
     // Recipe already processed — just add user mapping
-    if (data.user_id) {
-      await saveUserRecipe(data.user_id, existing[0].id);
-      console.log(`  -> Already exists, added mapping for user ${data.user_id}`);
-    } else {
-      console.log(`  -> Already exists, returning cached`);
-    }
+    await saveUserRecipe(userId, existing[0].id);
+    console.log(`  -> Already exists, added mapping for user ${userId}`);
     res.json(await enrichRecipe(existing[0]));
     return;
   }
@@ -806,9 +809,7 @@ app.post("/recipes", async (req, res) => {
     .returning();
 
   // Add user-recipe mapping
-  if (data.user_id) {
-    await saveUserRecipe(data.user_id, result[0].id);
-  }
+  await saveUserRecipe(userId, result[0].id);
 
   console.log(`  -> Saved: ${result[0].title} (thumbnail: ${thumbnailUrl ? "YES" : "NO"})`);
   res.status(201).json(toSnake(result[0]));
@@ -844,7 +845,7 @@ app.get("/users/:userId/recipes", async (req, res) => {
       isFavorite: userRecipes.isFavorite,
     })
     .from(userRecipes)
-    .where(eq(userRecipes.userId, req.params.userId));
+    .where(eq(userRecipes.userId, req.auth!.userId));
 
   if (mappings.length === 0) {
     res.json([]);
@@ -964,12 +965,9 @@ app.post("/recipes/backfill-freezer", async (_req, res) => {
 
 // Sync Clerk user to local DB
 app.post("/users/sync", async (req, res) => {
-  const { clerk_id, email, name, avatar_url } = req.body;
-
-  if (!clerk_id) {
-    res.status(400).json({ error: "clerk_id required" });
-    return;
-  }
+  const { email, name, avatar_url } = req.body;
+  // Identity comes from the verified token, never from the request body.
+  const clerk_id = req.auth!.userId;
 
   const existing = await db
     .select()
@@ -1681,14 +1679,14 @@ app.get("/users/:userId/folders", async (req, res) => {
   const folders = await db
     .select()
     .from(userFolders)
-    .where(eq(userFolders.userId, req.params.userId))
+    .where(eq(userFolders.userId, req.auth!.userId))
     .orderBy(userFolders.sortOrder);
 
   // Get recipe counts per folder
   const mappings = await db
     .select({ folderId: userRecipes.folderId, recipeId: userRecipes.recipeId })
     .from(userRecipes)
-    .where(eq(userRecipes.userId, req.params.userId));
+    .where(eq(userRecipes.userId, req.auth!.userId));
 
   const countMap = new Map<string, number>();
   for (const m of mappings) {
@@ -1707,9 +1705,10 @@ app.get("/users/:userId/folders", async (req, res) => {
 
 // Create folder
 app.post("/folders", async (req, res) => {
-  const { user_id, name, emoji } = req.body;
-  if (!user_id || !name) {
-    res.status(400).json({ error: "user_id and name required" });
+  const { name, emoji } = req.body;
+  const user_id = req.auth!.userId;
+  if (!name) {
+    res.status(400).json({ error: "name required" });
     return;
   }
 
@@ -1770,7 +1769,7 @@ app.delete("/users/:userId/recipes/:recipeId", async (req, res) => {
     .delete(userRecipes)
     .where(
       and(
-        eq(userRecipes.userId, req.params.userId),
+        eq(userRecipes.userId, req.auth!.userId),
         eq(userRecipes.recipeId, req.params.recipeId)
       )
     )
@@ -1793,7 +1792,7 @@ app.put("/users/:userId/recipes/:recipeId/folder", async (req, res) => {
     .set({ folderId: folder_id || null })
     .where(
       and(
-        eq(userRecipes.userId, req.params.userId),
+        eq(userRecipes.userId, req.auth!.userId),
         eq(userRecipes.recipeId, req.params.recipeId)
       )
     )
@@ -1816,7 +1815,7 @@ app.put("/users/:userId/recipes/:recipeId/favorite", async (req, res) => {
     .set({ isFavorite: is_favorite ?? false })
     .where(
       and(
-        eq(userRecipes.userId, req.params.userId),
+        eq(userRecipes.userId, req.auth!.userId),
         eq(userRecipes.recipeId, req.params.recipeId)
       )
     )
@@ -1832,9 +1831,10 @@ app.put("/users/:userId/recipes/:recipeId/favorite", async (req, res) => {
 
 // Save a meal plan
 app.post("/meal-plans", async (req, res) => {
-  const { user_id, name, plan, recipe_ids, shopping_list } = req.body;
-  if (!user_id || !plan) {
-    res.status(400).json({ error: "user_id and plan required" });
+  const { name, plan, recipe_ids, shopping_list } = req.body;
+  const user_id = req.auth!.userId;
+  if (!plan) {
+    res.status(400).json({ error: "plan required" });
     return;
   }
 
@@ -1863,7 +1863,7 @@ app.get("/users/:userId/meal-plans", async (req, res) => {
   const result = await db
     .select()
     .from(mealPlans)
-    .where(eq(mealPlans.userId, req.params.userId))
+    .where(eq(mealPlans.userId, req.auth!.userId))
     .orderBy(desc(mealPlans.createdAt));
 
   // Backfill old plans that have no shopping_list or recipe_ids
@@ -1890,7 +1890,7 @@ app.get("/users/:userId/meal-plans", async (req, res) => {
       const mappings = await db
         .select({ recipeId: userRecipes.recipeId })
         .from(userRecipes)
-        .where(eq(userRecipes.userId, req.params.userId));
+        .where(eq(userRecipes.userId, req.auth!.userId));
       const existingRecipeRows = mappings.length > 0
         ? await db.select().from(recipes).where(inArray(recipes.id, mappings.map(m => m.recipeId)))
         : [];
@@ -1925,11 +1925,11 @@ app.get("/users/:userId/meal-plans", async (req, res) => {
                   caloriesTotalKcal: meal.calories ?? null,
                   cookingTimeMinutes: 30,
                   tags: [],
-                  requestedBy: req.params.userId,
+                  requestedBy: req.auth!.userId,
                 })
                 .returning();
               titleToId[title] = created.id;
-              await saveUserRecipe(req.params.userId, created.id);
+              await saveUserRecipe(req.auth!.userId, created.id);
             }
           }
         }
@@ -2056,7 +2056,7 @@ app.get("/users/:userId/reviews", async (req, res) => {
   const result = await db
     .select()
     .from(recipeReviews)
-    .where(eq(recipeReviews.userId, req.params.userId))
+    .where(eq(recipeReviews.userId, req.auth!.userId))
     .orderBy(desc(recipeReviews.createdAt));
   res.json(toSnake(result));
 });
@@ -2098,7 +2098,7 @@ app.get("/users/:userId/pantry", async (req, res) => {
     })
     .from(userPantry)
     .innerJoin(ingredients, eq(userPantry.ingredientId, ingredients.id))
-    .where(eq(userPantry.userId, req.params.userId))
+    .where(eq(userPantry.userId, req.auth!.userId))
     .orderBy(desc(userPantry.addedAt));
   res.json(rows);
 });
@@ -2122,7 +2122,7 @@ app.post("/users/:userId/pantry", async (req, res) => {
     .from(userPantry)
     .where(
       and(
-        eq(userPantry.userId, req.params.userId),
+        eq(userPantry.userId, req.auth!.userId),
         inArray(userPantry.ingredientId, ingredientIds)
       )
     );
@@ -2132,7 +2132,7 @@ app.post("/users/:userId/pantry", async (req, res) => {
   if (newIds.length > 0) {
     await db.insert(userPantry).values(
       newIds.map((id) => ({
-        userId: req.params.userId,
+        userId: req.auth!.userId,
         ingredientId: id,
       }))
     );
@@ -2145,7 +2145,7 @@ app.delete("/users/:userId/pantry/:ingredientId", async (req, res) => {
     .delete(userPantry)
     .where(
       and(
-        eq(userPantry.userId, req.params.userId),
+        eq(userPantry.userId, req.auth!.userId),
         eq(userPantry.ingredientId, req.params.ingredientId)
       )
     );
@@ -2168,14 +2168,14 @@ app.get("/users/:userId/shopping-list", async (req, res) => {
     })
     .from(userShoppingList)
     .innerJoin(ingredients, eq(userShoppingList.ingredientId, ingredients.id))
-    .where(eq(userShoppingList.userId, req.params.userId))
+    .where(eq(userShoppingList.userId, req.auth!.userId))
     .orderBy(desc(userShoppingList.addedAt));
 
   // Check which shopping list items have alternatives in the user's pantry
   const pantryRows = await db
     .select({ ingredientId: userPantry.ingredientId })
     .from(userPantry)
-    .where(eq(userPantry.userId, req.params.userId));
+    .where(eq(userPantry.userId, req.auth!.userId));
   const pantryIds = new Set(pantryRows.map((r) => r.ingredientId));
 
   // Collect all alternative IDs we need to resolve names for
@@ -2230,7 +2230,7 @@ app.post("/users/:userId/shopping-list", async (req, res) => {
     .from(userShoppingList)
     .where(
       and(
-        eq(userShoppingList.userId, req.params.userId),
+        eq(userShoppingList.userId, req.auth!.userId),
         inArray(userShoppingList.ingredientId, ingredientIds)
       )
     );
@@ -2240,7 +2240,7 @@ app.post("/users/:userId/shopping-list", async (req, res) => {
   if (newIds.length > 0) {
     await db.insert(userShoppingList).values(
       newIds.map((id) => ({
-        userId: req.params.userId,
+        userId: req.auth!.userId,
         ingredientId: id,
       }))
     );
@@ -2256,7 +2256,7 @@ app.put("/users/:userId/shopping-list/:itemId/check", async (req, res) => {
     .where(
       and(
         eq(userShoppingList.id, req.params.itemId),
-        eq(userShoppingList.userId, req.params.userId)
+        eq(userShoppingList.userId, req.auth!.userId)
       )
     );
   res.json({ ok: true });
@@ -2268,7 +2268,7 @@ app.delete("/users/:userId/shopping-list/:itemId", async (req, res) => {
     .where(
       and(
         eq(userShoppingList.id, req.params.itemId),
-        eq(userShoppingList.userId, req.params.userId)
+        eq(userShoppingList.userId, req.auth!.userId)
       )
     );
   res.status(204).send();
