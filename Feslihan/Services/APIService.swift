@@ -228,6 +228,7 @@ enum APIService {
 
     // MARK: - Pantry
 
+    /// Fetch the user's pantry items.
     static func fetchPantry(userId: String) async -> [PantryItemDTO] {
         guard let url = URL(string: "\(baseURL)/users/\(userId)/pantry") else { return [] }
         guard let (data, response) = try? await URLSession.shared.data(from: url),
