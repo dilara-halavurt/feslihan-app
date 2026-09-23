@@ -1335,10 +1335,13 @@ private struct ManualMealPlanBuilder: View {
             }
         }
         .sheet(item: $editingMeal) { meal in
-            MealEditSheet(meal: meal, userRecipes: userRecipes, recipeById: recipeById) { updated in
+            MealEditSheet(meal: meal, userRecipes: userRecipes, recipeById: recipeById, onSave: { updated in
                 replaceMeal(meal, with: updated)
                 editingMeal = nil
-            }
+            }, onDelete: {
+                deleteMeal(meal)
+                editingMeal = nil
+            })
         }
         .sheet(item: $newMealForDay) { meal in
             MealEditSheet(meal: meal, userRecipes: userRecipes, recipeById: recipeById) { updated in
@@ -1405,6 +1408,15 @@ private struct ManualMealPlanBuilder: View {
               let dayIndex = days.firstIndex(where: { $0.id == dayId }) else { return }
         guard !meal.recipeIds.isEmpty else { return }
         days[dayIndex].meals.append(meal)
+    }
+
+    private func deleteMeal(_ meal: MealPlanMeal) {
+        for dayIndex in days.indices {
+            if let mealIndex = days[dayIndex].meals.firstIndex(where: { $0.id == meal.id }) {
+                days[dayIndex].meals.remove(at: mealIndex)
+                break
+            }
+        }
     }
 
     private func savePlan() {
@@ -1663,11 +1675,25 @@ struct MealPlanResultView: View {
             )
         }
         .sheet(item: $editingMeal) { meal in
-            MealEditSheet(meal: meal, userRecipes: userRecipes, recipeById: recipeById) { updated in
+            MealEditSheet(meal: meal, userRecipes: userRecipes, recipeById: recipeById, onSave: { updated in
                 replaceMealById(meal, with: updated)
                 editingMeal = nil
+            }, onDelete: {
+                deleteMealById(meal)
+                editingMeal = nil
+            })
+        }
+    }
+
+    private func deleteMealById(_ meal: MealPlanMeal) {
+        guard var plan else { return }
+        for dayIndex in plan.days.indices {
+            if let mealIndex = plan.days[dayIndex].meals.firstIndex(where: { $0.id == meal.id }) {
+                plan.days[dayIndex].meals.remove(at: mealIndex)
+                break
             }
         }
+        self.plan = plan
     }
 
     private func replaceMeal(_ meal: MealPlanMeal, with recipe: RecipeDTO) {
