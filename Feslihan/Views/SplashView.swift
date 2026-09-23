@@ -13,7 +13,7 @@ struct SplashView: View {
                 ModeSelectionView()
                     .transition(.opacity)
             } else {
-                OnboardingView()
+                OnboardingView(onComplete: { hasCompletedOnboarding = true })
                     .transition(.opacity)
             }
         } else {
