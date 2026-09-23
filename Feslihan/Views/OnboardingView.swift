@@ -1,28 +1,29 @@
 import SwiftUI
+import ClerkKit
 
+// MARK: - Onboarding
+
+/// A simple two-step onboarding that leads a new user to first add a recipe,
+/// then fill their pantry. Shown once after the first sign-in.
 struct OnboardingView: View {
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    @State private var currentStep = 0
-    @State private var showAddRecipe = false
+    let onComplete: () -> Void
 
-    private let steps: [(icon: String, title: String, subtitle: String, description: String)] = [
-        (
-            "leaf.fill",
-            "Feslihan'a Hoş Geldin",
-            "Anne, ne yesek?",
-            "Tariflerini bir araya getir, kilerini takip et ve her gün ne pişireceğine kolayca karar ver."
+    @State private var step = 0
+    @State private var showAddRecipe = false
+    @State private var showPantry = false
+
+    private let steps = [
+        OnboardingStep(
+            icon: "book.closed.fill",
+            title: "Önce tariflerini ekle",
+            subtitle: "Sevdiğin tarifleri bir bağlantıdan saniyeler içinde defterine ekle. Buradan başlayalım.",
+            primaryLabel: "Tarif Ekle"
         ),
-        (
-            "book.closed.fill",
-            "Tariflerini Ekle",
-            "Sosyal medyadaki tarifleri kaydet",
-            "Instagram, TikTok veya web'den tarif linkini yapıştır — gerisini biz halledelim."
-        ),
-        (
-            "cabinet.fill",
-            "Kilerini Doldur",
-            "Evdeki malzemeleri ekle",
-            "Kilerindeki malzemeleri ekleyince sana özel tarif önerileri sunabiliriz."
+        OnboardingStep(
+            icon: "refrigerator.fill",
+            title: "Sonra kilerini doldur",
+            subtitle: "Evdeki malzemeleri ekle ki Feslihan sana en uygun tarifleri önerebilsin.",
+            primaryLabel: "Malzeme Ekle"
         )
     ]
 
@@ -31,129 +32,120 @@ struct OnboardingView: View {
             DS.cream.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Skip button
+                // Skip
                 HStack {
                     Spacer()
-                    if currentStep < steps.count - 1 {
-                        Button("Atla") {
-                            hasCompletedOnboarding = true
-                        }
+                    Button("Atla") { onComplete() }
                         .font(.label())
                         .foregroundStyle(DS.dust)
-                    }
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 8)
-                .frame(height: 36)
+                .padding(.top, 12)
 
                 Spacer()
 
-                // Illustration
-                let step = steps[currentStep]
-                VStack(spacing: 28) {
+                let current = steps[step]
+
+                VStack(spacing: 24) {
                     ZStack {
                         Circle()
                             .fill(DS.emberLight)
-                            .frame(width: 120, height: 120)
+                            .frame(width: 104, height: 104)
 
-                        Image(systemName: step.icon)
-                            .font(.system(size: 54, weight: .medium))
+                        Image(systemName: current.icon)
+                            .font(.system(size: 48, weight: .medium))
                             .foregroundStyle(DS.ember)
                     }
 
                     VStack(spacing: 10) {
-                        Text(step.title)
-                            .font(.displayLarge())
+                        Text(current.title)
+                            .font(.displayTitle())
                             .foregroundStyle(DS.ink)
                             .multilineTextAlignment(.center)
 
-                        Text(step.subtitle)
-                            .font(.handwritten())
-                            .foregroundStyle(DS.smoke)
-
-                        Text(step.description)
+                        Text(current.subtitle)
                             .font(.bodyText())
                             .foregroundStyle(DS.smoke)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 4)
+                            .frame(maxWidth: 300)
                     }
                 }
-                .padding(.horizontal, 24)
+                .id(step)
+                .transition(.opacity)
 
                 Spacer()
 
-                // Dots
+                // Page indicator
                 HStack(spacing: 8) {
-                    ForEach(0..<steps.count, id: \.self) { index in
-                        Circle()
-                            .fill(index == currentStep ? DS.ember : DS.stone)
-                            .frame(width: 8, height: 8)
+                    ForEach(steps.indices, id: \.self) { index in
+                        Capsule()
+                            .fill(index == step ? DS.ember : DS.stone)
+                            .frame(width: index == step ? 22 : 8, height: 8)
                     }
                 }
-                .padding(.bottom, 32)
+                .padding(.bottom, 24)
 
-                // Button
-                Button {
-                    if currentStep == 1 {
-                        showAddRecipe = true
-                    } else if currentStep < steps.count - 1 {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            currentStep += 1
+                // Actions
+                VStack(spacing: 12) {
+                    Button {
+                        if step == 0 {
+                            showAddRecipe = true
+                        } else {
+                            showPantry = true
                         }
-                    } else {
-                        hasCompletedOnboarding = true
+                    } label: {
+                        Text(current.primaryLabel)
+                            .font(.buttonFont())
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .foregroundStyle(DS.flour)
+                            .background(DS.ember)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .shadow(color: DS.shadowButton, radius: 8, y: 4)
                     }
-                } label: {
-                    Text(buttonTitle)
-                        .font(.buttonFont())
-                        .foregroundStyle(DS.flour)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(DS.ember)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .shadow(color: DS.shadowButton, radius: 8, y: 4)
-                }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 16)
 
-                // Secondary action on recipe step
-                if currentStep == 1 {
-                    Button("Sonra eklerim") {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            currentStep += 1
-                        }
+                    Button {
+                        advance()
+                    } label: {
+                        Text(step == 0 ? "Daha Sonra" : "Başla")
+                            .font(.buttonFont())
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .foregroundStyle(DS.ember)
+                            .background(DS.emberLight)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
-                    .font(.label())
-                    .foregroundStyle(DS.dust)
-                    .padding(.bottom, 24)
-                } else if currentStep == 2 {
-                    Button("Sonra doldururum") {
-                        hasCompletedOnboarding = true
-                    }
-                    .font(.label())
-                    .foregroundStyle(DS.dust)
-                    .padding(.bottom, 24)
-                } else {
-                    Spacer().frame(height: 44)
                 }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
             }
         }
-        .sheet(isPresented: $showAddRecipe, onDismiss: {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                currentStep += 1
-            }
-        }) {
+        .sheet(isPresented: $showAddRecipe, onDismiss: advance) {
             AddRecipeView()
         }
-    }
-
-    private var buttonTitle: String {
-        switch currentStep {
-        case 0: return "Başlayalım"
-        case 1: return "İlk Tarifimi Ekle"
-        case 2: return "Kilerimi Doldurmaya Başla"
-        default: return "Devam"
+        .fullScreenCover(isPresented: $showPantry, onDismiss: advance) {
+            PantryBubbleSheet(
+                existingNames: [],
+                onSave: { names in
+                    guard let userId = Clerk.shared.user?.id else { return }
+                    Task { _ = await APIService.addToPantry(userId: userId, ingredientNames: names) }
+                }
+            )
         }
     }
+
+    private func advance() {
+        if step == 0 {
+            withAnimation(.easeInOut(duration: 0.25)) { step = 1 }
+        } else {
+            onComplete()
+        }
+    }
+}
+
+private struct OnboardingStep {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let primaryLabel: String
 }

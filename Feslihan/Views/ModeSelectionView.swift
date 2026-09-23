@@ -23,6 +23,8 @@ struct ModeSelectionView: View {
     @State private var recipeCount = 0
     @State private var showPantryGate = false
     @State private var pendingMode: AppMode?
+    @State private var showOnboarding = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @EnvironmentObject var subscription: SubscriptionService
     @Environment(\.modelContext) private var modelContext
 
@@ -41,6 +43,12 @@ struct ModeSelectionView: View {
         pantryCount = items.count
         let shoppingItems = await APIService.fetchShoppingList(userId: userId)
         shoppingCount = shoppingItems.filter { !$0.is_checked }.count
+    }
+
+    private func refreshCounts() async {
+        await refreshPantryCount()
+        let descriptor = FetchDescriptor<Recipe>()
+        recipeCount = (try? modelContext.fetchCount(descriptor)) ?? 0
     }
 
     private func navigateOrGate(_ mode: AppMode) {
@@ -122,43 +130,14 @@ struct ModeSelectionView: View {
                         .padding(.top, 8)
                         .padding(.bottom, 18)
 
-                        // Empty state prompt
+                        // First-run prompt leading the user to add recipes
                         if recipeCount == 0 {
-                            Button(action: { showAddRecipe = true }) {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: 28, weight: .medium))
-                                        .foregroundStyle(DS.flour)
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("İlk tarifini ekle")
-                                            .font(.cardTitle())
-                                            .foregroundStyle(DS.flour)
-
-                                        Text("Sosyal medyadan veya web'den tarif kaydet")
-                                            .font(.captionText())
-                                            .foregroundStyle(DS.flour.opacity(0.8))
-                                    }
-
-                                    Spacer()
-
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(DS.flour.opacity(0.6))
-                                }
-                                .padding(16)
-                                .background(
-                                    LinearGradient(colors: [DS.ember, DS.emberDark], startPoint: .leading, endPoint: .trailing)
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
-                                .shadow(color: DS.shadowButton, radius: 8, y: 4)
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 8)
+                            AddRecipePrompt { showAddRecipe = true }
+                                .padding(.horizontal, 20)
+                                .padding(.bottom, 16)
                         }
 
-                        // Mode cards (3 primary modes)
+                        // Mode cards
                         VStack(spacing: 12) {
                             ModeCard(
                                 icon: "book.closed.fill",
@@ -276,6 +255,16 @@ struct ModeSelectionView: View {
                 withAnimation(.easeOut(duration: 0.2).delay(0.05)) {
                     cardsVisible = true
                 }
+                if !hasCompletedOnboarding {
+                    showOnboarding = true
+                }
+            }
+            .fullScreenCover(isPresented: $showOnboarding) {
+                OnboardingView(onComplete: {
+                    hasCompletedOnboarding = true
+                    showOnboarding = false
+                    Task { await refreshCounts() }
+                })
             }
             .task {
                 await refreshPantryCount()
@@ -317,6 +306,47 @@ struct ModeSelectionView: View {
                 LinearGradient(colors: [DS.terracotta, DS.honey], startPoint: .topLeading, endPoint: .bottomTrailing)
             )
             .clipShape(Circle())
+    }
+}
+
+// MARK: - Add Recipe Prompt (first-run empty state)
+
+private struct AddRecipePrompt: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(DS.ember)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("İlk tarifini ekle")
+                        .font(.cardTitle())
+                        .foregroundStyle(DS.ink)
+
+                    Text("Defterin henüz boş — hadi başlayalım!")
+                        .font(.label())
+                        .foregroundStyle(DS.smoke)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DS.dust)
+            }
+            .padding(16)
+            .background(DS.emberLight)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(DS.ember.opacity(0.25), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 
